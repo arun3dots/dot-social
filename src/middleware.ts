@@ -28,19 +28,12 @@ export async function middleware(req: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   });
 
-  // Read fallback session cookie if any
-  const sessionCookie = req.cookies.get('social_engine_session')?.value;
-  let fallbackUser: { id: string; name: string; email: string; role: string } | null = null;
-  if (sessionCookie) {
-    try {
-      fallbackUser = JSON.parse(decodeURIComponent(sessionCookie));
-    } catch (e) {
-      fallbackUser = null;
-    }
-  }
-
-  const role = (token?.role as string) || fallbackUser?.role;
-  const isAuthenticated = !!token || !!fallbackUser;
+  // Authorization is derived ONLY from the signed NextAuth JWT.
+  // The previous version also trusted an unsigned, client-writable cookie
+  // (social_engine_session) and read `role` out of it — so anyone could set
+  // {"role":"SUPER_ADMIN"} by hand and be treated as an administrator.
+  const role = token?.role as string | undefined;
+  const isAuthenticated = !!token;
 
   // 3. Super Admin routes (/admin, /admin/*)
   if (pathname.startsWith('/admin') && pathname !== '/admin/login') {

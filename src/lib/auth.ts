@@ -1,4 +1,6 @@
 import { NextAuthOptions } from 'next-auth';
+import crypto from 'crypto';
+import pool from './postgres';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 
@@ -14,6 +16,32 @@ if (!nextAuthSecret) {
 // outside production (or when explicitly enabled).
 const demoAllowed =
   process.env.NODE_ENV !== 'production' || process.env.ALLOW_DEMO_LOGIN === 'true';
+
+// Same person must always map to the same user row. Previously creators got
+// `usr_creator_${Date.now()}` — a NEW id on every login, which made per-user
+// persistence impossible.
+function stableUserId(email: string): string {
+  return 'usr_' + crypto.createHash('sha256').update(email.toLowerCase()).digest('hex').slice(0, 20);
+}
+
+// Upsert on every sign-in so the database, not the client, decides who you are.
+async function upsertUser(email: string, name: string | null, preferredId: string): Promise<string> {
+  const id = preferredId || stableUserId(email);
+  try {
+    const res = await pool.query(
+      `INSERT INTO users (id, email, name, role)
+       VALUES ($1, $2, $3, 'CREATOR')
+       ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id`,
+      [id, email, name || email.split('@')[0]]
+    );
+    return res.rows[0]?.id || id;
+  } catch (e) {
+    // Never block sign-in on a database hiccup; fall back to the deterministic id.
+    console.error('upsertUser failed:', (e as Error).message);
+    return id;
+  }
+}
 
 export const authOptions: NextAuthOptions = {
   secret: nextAuthSecret,
@@ -54,8 +82,8 @@ export const authOptions: NextAuthOptions = {
             image: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
           };
         }
-
         const adminSecretKey = (process.env.SUPER_ADMIN_SECRET_KEY || '').trim();
+
         const isCredentialsValid =
           !!adminSecretKey &&
           !!email &&
@@ -109,7 +137,7 @@ export const authOptions: NextAuthOptions = {
         }
 
         return {
-          id: `usr_creator_${Date.now()}`,
+          id: stableUserId(email),
           name: credentials.name || email.split('@')[0],
           email,
           role: 'CREATOR',
@@ -138,6 +166,12 @@ export const authOptions: NextAuthOptions = {
       : []),
   ],
   callbacks: {
+    async signIn({ user }) {
+      if (user?.email) {
+        user.id = await upsertUser(user.email, user.name ?? null, user.id as string);
+      }
+      return true;
+    },
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;

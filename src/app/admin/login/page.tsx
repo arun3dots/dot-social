@@ -20,7 +20,7 @@ export default function AdminLoginPage() {
     try {
       const res = await signIn('admin-credentials', {
         email: isDemo ? 'admin@antigravity.local' : email.trim(),
-        secretKey: isDemo ? 'admin123' : secretKey,
+        secretKey: isDemo ? '' : secretKey,
         isDemo: isDemo ? 'true' : 'false',
         redirect: false,
       });
