@@ -8,6 +8,7 @@ Rules encoded here (see PRODUCT-FLOW-SPEC.md):
   * BYOK wins: if the caller supplies an image key we never fall back to the server's.
 """
 import os
+import shutil
 import sys
 import json
 import base64
@@ -156,24 +157,97 @@ def generate_image_openai(api_key, prompt, size, out_path, quality="low", model=
         return False, str(e)[:220]
 
 
-def resize_to_exact(path, target):
-    """Resize/crop to the exact platform size when Pillow is available."""
+def _edge_extend(img, tw, th):
+    """Fill a (tw, th) canvas by stretching the image's own outermost row/column outward.
+
+    Blurring a scaled-down copy of the whole picture puts a ghost of the scene in the band; stretching
+    just the edge pixels continues the picture's edge colour instead, which is near-invisible on flat
+    or poster-style artwork and reads as a soft continuation on a photograph.
+    """
+    from PIL import Image
+
+    left = max(0, (tw - img.width) // 2)
+    top = max(0, (th - img.height) // 2)
+    canvas = Image.new("RGB", (tw, th), (12, 14, 18))
+    canvas.paste(img, (left, top))
+
+    if left > 0 and img.width > 1:
+        canvas.paste(img.crop((0, 0, 1, img.height)).resize((left, img.height)), (0, top))
+        right = tw - img.width - left
+        if right > 0:
+            canvas.paste(img.crop((img.width - 1, 0, img.width, img.height)).resize((right, img.height)), (left + img.width, top))
+    if top > 0 and img.height > 1:
+        # full width, so the corners are covered by the horizontal stretch too
+        canvas.paste(canvas.crop((0, top, tw, top + 1)).resize((tw, top)), (0, 0))
+        bottom = th - img.height - top
+        if bottom > 0:
+            canvas.paste(canvas.crop((0, top + img.height - 1, tw, top + img.height)).resize((tw, bottom)), (0, top + img.height))
+    return canvas
+
+
+def fit_to_exact(path, target, bleed=True):
+    """Scale an image to FIT an exact size, in place. NOTHING IS EVER CROPPED.
+
+    Covering the frame ("cover") throws away whatever does not fit, which is how a subject ends up
+    cut in half on one platform. So the whole image is scaled to fit inside the target box, and the
+    gap left by a different aspect ratio is filled with the image itself, blurred and darkened - the
+    standard broadcast/Instagram treatment, so the frame reads as designed rather than padded.
+
+    Returns (ok, detail, info) with info["mode"] = "resize" (aspects matched, no gap), "fit-bleed"
+    (whole image inset over its own blurred bleed) or "fit-solid" (bleed disabled: flat background),
+    plus the content box and the band width, so the caller can report the geometry honestly.
+    """
     try:
-        from PIL import Image
+        from PIL import Image, ImageEnhance, ImageFilter
     except ImportError:
-        return False, "Pillow not installed"
+        return False, "Pillow not installed", {}
+
     try:
         img = Image.open(path).convert("RGB")
         tw, th = target
-        scale = max(tw / img.width, th / img.height)
-        img = img.resize((max(1, int(img.width * scale)), max(1, int(img.height * scale))), Image.LANCZOS)
-        left = (img.width - tw) // 2
-        top = (img.height - th) // 2
-        img = img.crop((left, top, left + tw, top + th))
-        img.save(path, "PNG")
-        return True, f"resized to {tw}x{th}"
+        src_ratio = img.width / img.height
+        tgt_ratio = tw / th
+        info = {"target": f"{tw}x{th}", "source": f"{img.width}x{img.height}", "cropped": False}
+
+        if abs(src_ratio - tgt_ratio) / tgt_ratio < 0.005:
+            # Same shape as the target: a straight resize loses nothing and leaves no gap.
+            out = img.resize((tw, th), Image.LANCZOS)
+            info.update(mode="resize", content=f"{tw}x{th}", bandPx=0, upscaled=tw > img.width or th > img.height)
+        else:
+            contain = min(tw / img.width, th / img.height)
+            fg = img.resize((max(1, round(img.width * contain)), max(1, round(img.height * contain))), Image.LANCZOS)
+            left = (tw - fg.width) // 2
+            top = (th - fg.height) // 2
+            if bleed:
+                # The band continues the picture's own edge colours, then is softened: a ghost of the
+                # whole scene in the band looked wrong on poster-style images.
+                bg = _edge_extend(img, tw, th)
+                bg = bg.filter(ImageFilter.GaussianBlur(radius=max(6, tw // 60)))
+                bg = ImageEnhance.Brightness(bg).enhance(0.9)
+                out = bg
+                mode = "fit-bleed"
+            else:
+                out = Image.new("RGB", (tw, th), (10, 12, 18))
+                mode = "fit-solid"
+            out.paste(fg, (left, top))
+            info.update(
+                mode=mode,
+                content=f"{fg.width}x{fg.height}",
+                bandPx=max(left, top),
+                inset=[left, top],
+                upscaled=contain > 1.001,
+            )
+
+        out.save(path, "PNG")
+        return True, f"{info['mode']} to {tw}x{th} (content {info['content']}, band {info['bandPx']}px)", info
     except Exception as e:  # noqa: BLE001
-        return False, str(e)[:160]
+        return False, str(e)[:160], {}
+
+
+def resize_to_exact(path, target):
+    """Kept for callers that only want a yes/no: fits the target size without cropping. See fit_to_exact."""
+    ok, detail, _info = fit_to_exact(path, target)
+    return ok, detail
 
 
 
@@ -192,42 +266,37 @@ def choose_master_size(platforms):
 
 
 def derive_for_platforms(master_path, platforms, out_dir, prefix):
-    """Cover-crop one master into each platform's exact feed size.
+    """Give every platform its own exact-size file from one master, WITHOUT CROPPING ANYTHING.
 
-    Returns {PLATFORM: {path, width, height, bytes, upscaled}} - upscaled tells the truth about an
-    image that had to be enlarged to reach the target, rather than pretending every output is native.
+    Each platform gets a copy of the whole image, fitted to its frame; where the aspect differs the
+    gap is filled with the image's own blurred bleed. Returns, per platform, the mode, the content
+    box, the band width and mode="...", with cropped always False.
     """
-    try:
-        from PIL import Image
-    except ImportError:
-        return {p: {"error": "Pillow not installed"} for p in platforms}
-
     out = {}
-    with Image.open(master_path) as opened:
-        master = opened.convert("RGB")
-        mw, mh = master.size
-        for platform in platforms:
-            spec = PLATFORM_SPECS.get(platform)
-            if not spec:
-                continue
-            tw, th = spec["image_size"]
-            scale = max(tw / mw, th / mh)  # cover: fill the frame, then crop the overflow
-            big = master.resize((max(tw, int(round(mw * scale))), max(th, int(round(mh * scale)))), Image.LANCZOS)
-            left = (big.width - tw) // 2
-            top = (big.height - th) // 2
-            final = big.crop((left, top, left + tw, top + th))
-            path = Path(out_dir) / f"{prefix}_{platform.lower()}.png"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            final.save(path, "PNG")
-            out[platform] = {
-                "path": str(path),
-                "width": tw,
-                "height": th,
-                "bytes": path.stat().st_size,
-                "upscaled": scale > 1.001,
-                "from": f"{mw}x{mh}",
-                "ratio": spec.get("ratio"),
-            }
+    for platform in platforms:
+        spec = PLATFORM_SPECS.get(platform)
+        if not spec:
+            continue
+        path = Path(out_dir) / f"{prefix}_{platform.lower()}.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(master_path, path)
+        ok, detail, info = fit_to_exact(path, spec["image_size"])
+        entry = {
+            "path": str(path),
+            "width": spec["image_size"][0],
+            "height": spec["image_size"][1],
+            "bytes": path.stat().st_size if path.exists() else 0,
+            "upscaled": bool(info.get("upscaled", False)),
+            "from": info.get("source", ""),
+            "ratio": spec.get("ratio"),
+            "cropped": False,
+            "mode": info.get("mode"),
+            "content": info.get("content"),
+            "bandPx": info.get("bandPx", 0),
+            "ok": ok,
+            "detail": detail,
+        }
+        out[platform] = entry
     return out
 
 
@@ -343,17 +412,21 @@ def main():
                 if not ok:
                     outputs[platform] = {"error": detail}
                     continue
-                rok, rdetail = resize_to_exact(out, spec["image_size"])
+                rok, rdetail, rinfo = fit_to_exact(out, spec["image_size"])
                 outputs[platform] = {
                     "path": str(out),
                     "width": spec["image_size"][0],
                     "height": spec["image_size"][1],
                     "bytes": out.stat().st_size if out.exists() else 0,
-                    "upscaled": False,
+                    "upscaled": bool(rinfo.get("upscaled", False)),
                     "from": spec["openai_size"],
                     "ratio": spec.get("ratio"),
                     "resized": rok,
                     "resizeDetail": rdetail,
+                    "cropped": False,
+                    "mode": rinfo.get("mode"),
+                    "content": rinfo.get("content"),
+                    "bandPx": rinfo.get("bandPx", 0),
                 }
             print(json.dumps({"ok": True, "perPlatform": True, "master": None, "outputs": outputs,
                               "prompt": args.campaignPrompt, "quality": quality}))
@@ -400,7 +473,7 @@ def main():
         if not ok:
             print(json.dumps({"ok": False, "error": detail}))
             return
-        rok, rdetail = resize_to_exact(out, spec["image_size"])
+        rok, rdetail, rinfo = fit_to_exact(out, spec["image_size"])
         print(json.dumps({
             "ok": True,
             "path": str(out),
@@ -410,6 +483,12 @@ def main():
             "bytes": out.stat().st_size if out.exists() else 0,
             "resized": rok,
             "resizeDetail": rdetail,
+            # nothing was cut: report the geometry of the fitted image
+            "cropped": False,
+            "mode": rinfo.get("mode"),
+            "content": rinfo.get("content"),
+            "bandPx": rinfo.get("bandPx", 0),
+            "ratio": spec.get("ratio"),
         }))
         return
     days = max(1, min(args.days, 7))  # hard cap: never more than a week in one batch

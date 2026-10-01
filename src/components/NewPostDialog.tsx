@@ -52,7 +52,9 @@ export default function NewPostDialog({ initialDate, dayIndex, onAddPost, onCrea
   const [error, setError] = useState<string | null>(null);
   const [withImage, setWithImage] = useState(true);
   const [imagePrompt, setImagePrompt] = useState('');
-  const [perPlatformImage, setPerPlatformImage] = useState(false);
+  // Separate generation per platform is the default: each image is composed for its own frame,
+  // so nothing is cropped and no frame needs padding.
+  const [perPlatformImage, setPerPlatformImage] = useState(true);
 
   // Keep the canonical order so the posts are created platform by platform, predictably.
   const toggle = (p: Platform) =>
@@ -199,7 +201,7 @@ export default function NewPostDialog({ initialDate, dayIndex, onAddPost, onCrea
               <span className={withImage ? 'text-zinc-200' : 'text-zinc-500'}>
                 generate an image
                 <span className="text-zinc-500">
-                  {' '}— generated once, then cropped to each platform&apos;s own size below
+                  {' '}— sized for each platform below, and never cropped: the whole picture is used
                 </span>
               </span>
             </label>
@@ -232,10 +234,19 @@ export default function NewPostDialog({ initialDate, dayIndex, onAddPost, onCrea
                     className="mt-0.5"
                   />
                   <span className={perPlatformImage ? 'text-zinc-300' : 'text-zinc-500'}>
-                    a separate image per platform instead
-                    <span className="text-zinc-600"> — one generation each, so every platform is native to its own ratio</span>
+                    a separate image for each platform
+                    <span className="text-zinc-600">
+                      {' '}— the default. Each image is composed for its own frame (16:9, 1:1, 4:5), so nothing is
+                      cut off. Costs one generation per platform.
+                    </span>
                   </span>
                 </label>
+                {!perPlatformImage && count > 1 && (
+                  <div className="pl-2 text-[10px] text-amber-300/80">
+                    one generation for all {count} platforms: the same picture is fitted into every frame — nothing is
+                    cropped, but where the shapes differ (X 16:9 vs Instagram 4:5) you get a thin blurred edge.
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -255,7 +266,10 @@ export default function NewPostDialog({ initialDate, dayIndex, onAddPost, onCrea
             {withImage && (
               <>
                 {' '}With an image each
-                {perPlatformImage ? ' (generated separately per platform)' : ' (one image, cropped per platform)'}.
+                {perPlatformImage
+                  ? ' (generated separately per platform, each composed for that frame)'
+                  : ' (one image, fitted into each frame)'}
+                , never cropped.
               </>
             )}{' '}
             You can change any of it afterwards in the editor.

@@ -132,7 +132,10 @@ export async function POST(req: NextRequest) {
 
     const explicitContent = typeof body.content === 'string' && body.content.trim() ? String(body.content) : '';
     const wantsGeneration = body.generateContent !== false;
+    // The copy generation and the image-prompt fine-tune need the key for different reasons: asking for
+    // no copy ("start blank") must NOT silently disable prompt refinement, so the two are resolved apart.
     const key = wantsGeneration && !explicitContent ? resolveKey(String(body.provider || '').toLowerCase(), body.apiKey) : null;
+    const llmKey = resolveKey(String(body.provider || '').toLowerCase(), body.apiKey);
     const theme = String(body.theme || day?.theme || '');
 
     // ---- 1. copy, one call per platform ----
@@ -185,11 +188,14 @@ export async function POST(req: NextRequest) {
     // ---- 2. the image: one prompt, per-platform sizes ----
     const wantsImage = body.generateImage === true;
     const userImagePrompt = String(body.imagePrompt || '').trim();
-    const perPlatformImages = body.imagePerPlatform === true;
+    // Generating separately per platform is the default for a multi-platform post: each platform's
+    // image is composed for its own frame, so nothing has to be cut off or padded. The single-image
+    // path stays available (body.imagePerPlatform === false) for anyone who wants to spend one
+    // generation instead of three - it fits the same image into every frame, uncropped.
+    const perPlatformImages = body.imagePerPlatform !== false;
 
     let imageReport: any = null;
     const mediaByPlatform = new Map<string, string>();
-    let sharedPrompt = '';
 
     if (wantsImage) {
       const imageApiKey = String(body.imageApiKey || '').trim() || (process.env.OPENAI_API_KEY || '').trim();
@@ -203,115 +209,197 @@ export async function POST(req: NextRequest) {
         const requestedQuality = String(body.imageQuality || profileQuality.rows[0]?.image_quality || 'low').toLowerCase();
         const imageQuality = ['low', 'medium', 'high'].includes(requestedQuality) ? requestedQuality : 'low';
 
-        // A brief from the user is fine-tuned into a production prompt; otherwise the prompt the copy
-        // model wrote for this campaign is used, and we say which of the two happened.
+        // One prompt per platform. With a separate generation per platform each prompt is fine-tuned
+        // against that platform's OWN frame, so the model composes for it and nothing has to be fitted.
+        const prompts = new Map<string, string>();
         let promptSource = 'the image prompt written with the copy';
         let refined = false;
         let refineNote: string | null = null;
+        let describedFallback = false;
 
         if (userImagePrompt) {
-          promptSource = 'fine-tuned from your brief';
-          if (!key) {
-            sharedPrompt = userImagePrompt;
+          if (!llmKey) {
+            // No model to fine-tune with: use the brief exactly as written, and say so.
+            for (const platform of platforms) prompts.set(platform, userImagePrompt);
             refineNote = 'no model key available to fine-tune it, so your words were used as written';
           } else {
-            const fin = await complete(
-              key.provider,
-              key.key,
-              imagePromptRefinePrompt({
-                userPrompt: userImagePrompt,
-                platforms,
-                niche: calendar.niche,
-                tone: calendar.tone,
-                postText: drafts.map((d) => d.content).find(Boolean),
-              }),
-              500
-            );
-            if (fin.ok) {
-              const cleaned = sanitiseImagePrompt(fin.text);
+            for (const platform of platforms) {
+              const fin = await complete(
+                llmKey.provider,
+                llmKey.key,
+                imagePromptRefinePrompt({
+                  userPrompt: userImagePrompt,
+                  platforms: [platform],
+                  niche: calendar.niche,
+                  tone: calendar.tone,
+                  postText: drafts.find((d) => d.platform === platform)?.content || drafts.map((d) => d.content).find(Boolean),
+                }),
+                500
+              );
+              const cleaned = fin.ok ? sanitiseImagePrompt(fin.text) : '';
               if (cleaned) {
-                sharedPrompt = cleaned;
+                prompts.set(platform, cleaned);
                 refined = true;
-              } else refineNote = 'the model returned nothing usable, so your words were used as written';
-            } else refineNote = `${fin.reason} - your words were used as written`;
+              } else {
+                prompts.set(platform, userImagePrompt);
+                refineNote = fin.ok
+                  ? 'the model returned nothing usable, so your words were used as written'
+                  : `${fin.reason} - your words were used as written`;
+              }
+            }
           }
-          if (!sharedPrompt) sharedPrompt = userImagePrompt;
         } else {
-          sharedPrompt = (drafts.map((d) => d.imagePrompt).find(Boolean) as string) || '';
-          if (!sharedPrompt) {
-            sharedPrompt =
-              `An editorial image for a post about ${calendar.niche || 'this brand'} for ${calendar.audience || 'its audience'}, ` +
-              `clean modern style, natural light, no text or lettering in the image.`;
-            promptSource = 'described from the calendar topic (no copy prompt was available)';
+          for (const platform of platforms) {
+            const fromCopy = drafts.find((d) => d.platform === platform)?.imagePrompt;
+            if (fromCopy) prompts.set(platform, fromCopy);
+          }
+          for (const platform of platforms) {
+            if (prompts.get(platform)) continue;
+            const spec = specFor(platform);
+            prompts.set(
+              platform,
+              `An editorial image for a ${spec.label} post about ${calendar.niche || 'this brand'} for ` +
+                `${calendar.audience || 'its audience'}, composed for a ${spec.ratio} frame, clean modern style, ` +
+                'natural light, no text or lettering in the image.'
+            );
+            describedFallback = true;
           }
         }
+
+        // The source label must describe what really happened, not what was attempted: saying
+        // "fine-tuned" while the model's words never made it in would be a false claim.
+        if (userImagePrompt) {
+          promptSource = refined
+            ? perPlatformImages
+              ? "fine-tuned from your brief, once per platform for that platform's own frame"
+              : 'fine-tuned from your brief'
+            : 'your brief, used as written';
+        } else if (describedFallback) {
+          promptSource = 'described from the calendar topic (no copy prompt was available)';
+        }
+
+        const firstPrompt = () => Array.from(prompts.values())[0] || '';
+        const promptFor = (platform: string) => prompts.get(platform) || firstPrompt();
 
         const dir = path.join(process.cwd(), 'media', 'generated', String(calendar.id));
         fs.mkdirSync(dir, { recursive: true });
         const stamp = Date.now().toString(36);
-        const prefix = `${calendar.id}_${dateStr}_img${stamp}`;
         const scriptPath = path.join(process.cwd(), 'tools', 'generate_calendar.py');
 
-        const args = [
-          scriptPath,
-          '--campaignImage',
-          '--campaignPrompt', sharedPrompt,
-          '--campaignPlatforms', platforms.join(','),
-          '--campaignOutDir', dir,
-          '--campaignPrefix', prefix,
-          '--imageQuality', imageQuality,
-          '--imageApiKey', imageApiKey,
-        ];
-        if (perPlatformImages) args.push('--imagePerPlatform');
+        // One spawn per image decision: a single platform when generating separately, or the whole set
+        // when fitting one image into every frame.
+        const generate = async (plats: string[], prompt: string) => {
+          const args = [
+            scriptPath,
+            '--campaignImage',
+            '--campaignPrompt', prompt,
+            '--campaignPlatforms', plats.join(','),
+            '--campaignOutDir', dir,
+            '--campaignPrefix', `${calendar.id}_${dateStr}_img${stamp}${plats.length === 1 ? `_${plats[0].toLowerCase()}` : ''}`,
+            '--imageQuality', imageQuality,
+            '--imageApiKey', imageApiKey,
+          ];
+          if (perPlatformImages) args.push('--imagePerPlatform');
+          const run = await runGenerator(args);
+          let parsed: any = null;
+          try {
+            parsed = JSON.parse(run.out.trim().split('\n').pop() || '{}');
+          } catch {
+            parsed = null;
+          }
+          return { run, parsed };
+        };
 
-        const run = await runGenerator(args);
-        let parsed: any = null;
-        try {
-          parsed = JSON.parse(run.out.trim().split('\n').pop() || '{}');
-        } catch {
-          parsed = null;
+        const outputs: Record<string, any> = {};
+        const failures: Record<string, string> = {};
+        let master: any = null;
+        let masterSize: string | null = null;
+
+        if (perPlatformImages) {
+          for (const platform of platforms) {
+            const { run, parsed } = await generate([platform], promptFor(platform));
+            if (!parsed?.ok) {
+              failures[platform] = parsed?.error || run.err.slice(0, 200) || 'image generation failed';
+              continue;
+            }
+            const produced = parsed.outputs?.[platform];
+            if (!produced || produced.error) {
+              failures[platform] = produced?.error || 'the generator returned no file for this platform';
+              continue;
+            }
+            outputs[platform] = produced;
+          }
+        } else {
+          const { run, parsed } = await generate(platforms, promptFor(platforms[0]));
+          if (parsed?.ok) {
+            master = parsed.master || null;
+            masterSize = parsed.masterSize || parsed.master?.size || null;
+            for (const platform of platforms) {
+              const produced = parsed.outputs?.[platform];
+              if (!produced || produced.error) {
+                failures[platform] = produced?.error || 'the generator returned no file for this platform';
+                continue;
+              }
+              outputs[platform] = produced;
+            }
+          } else {
+            const reason = parsed?.error || run.err.slice(0, 300) || 'image generation failed';
+            for (const platform of platforms) failures[platform] = reason;
+          }
         }
 
-        if (run.code !== 0 || !parsed?.ok) {
+        if (Object.keys(outputs).length === 0) {
           imageReport = {
             ok: false,
-            error: parsed?.error || run.err.slice(0, 300) || 'image generation failed',
-            prompt: sharedPrompt,
+            error: Object.values(failures)[0] || 'image generation failed',
+            failures,
+            prompt: firstPrompt(),
             promptSource,
             promptRefined: refined,
           };
         } else {
           const files: any = {};
-          for (const [platform, info] of Object.entries(parsed.outputs || {})) {
-            const anyInfo = info as any;
-            if (anyInfo?.error || !anyInfo?.path) {
-              files[platform] = { error: anyInfo?.error || 'no file' };
+          for (const platform of platforms) {
+            const info = outputs[platform];
+            if (!info) {
+              files[platform] = { error: failures[platform] || 'no file' };
               continue;
             }
-            const url = mediaUrlFor(String(calendar.id), anyInfo.path);
+            const url = mediaUrlFor(String(calendar.id), info.path);
             files[platform] = {
               url,
-              fileName: path.basename(String(anyInfo.path).replace(/\\/g, '/')),
-              width: anyInfo.width,
-              height: anyInfo.height,
-              bytes: anyInfo.bytes,
-              ratio: anyInfo.ratio,
-              upscaled: !!anyInfo.upscaled,
-              from: anyInfo.from,
+              fileName: path.basename(String(info.path).replace(/\\/g, '/')),
+              width: info.width,
+              height: info.height,
+              bytes: info.bytes,
+              ratio: info.ratio,
+              upscaled: !!info.upscaled,
+              from: info.from,
+              // How the image reached the exact size, and the proof nothing was cut: mode "resize"
+              // (the shapes matched), "fit-bleed" (the whole image inset, the gap filled with the same
+              // image blurred) or "fit-solid". content is the box the picture occupies inside the frame.
+              mode: info.mode,
+              content: info.content,
+              bandPx: info.bandPx,
+              cropped: false,
             };
             if (url) mediaByPlatform.set(platform, url);
           }
           imageReport = {
             ok: true,
-            perPlatform: !!parsed.perPlatform,
+            perPlatform: perPlatformImages,
+            noCrop: true,
             quality: imageQuality,
-            prompt: sharedPrompt,
+            prompt: promptFor(platforms[0]),
+            promptsByPlatform: Object.fromEntries(Array.from(prompts.entries())),
             promptSource,
             promptRefined: refined,
             yourPrompt: userImagePrompt || null,
             note: refineNote,
-            master: parsed.master || null,
+            master,
+            masterSize,
             files,
+            failures: Object.keys(failures).length ? failures : undefined,
           };
         }
       }
@@ -337,7 +425,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Prefer the prompt written for THIS platform, so a later regeneration stays platform-specific.
-      const storedPrompt = draft.imagePrompt || (wantsImage ? sharedPrompt : null);
+      const storedPrompt = draft.imagePrompt || (wantsImage ? String(imageReport?.promptsByPlatform?.[platform] || imageReport?.prompt || '') || null : null);
       const mediaUrl = mediaByPlatform.get(platform) || null;
 
       await pool.query(
@@ -363,7 +451,7 @@ export async function POST(req: NextRequest) {
         generated: draft.generated,
         chars: draft.content.length,
         imagePrompt: !!storedPrompt,
-        image: imageFile && !imageFile.error ? `${imageFile.width}x${imageFile.height}` : null,
+        image: imageFile && !imageFile.error ? `${imageFile.width}x${imageFile.height} ${imageFile.mode}${imageFile.bandPx ? ` (${imageFile.bandPx}px band)` : ''}` : null,
         imageError: imageFile?.error || null,
         slot: `${String(slotHour).padStart(2, '0')}:00 UTC`,
         note: draft.note || `generated ${draft.content.length} characters`,
@@ -399,7 +487,7 @@ export async function POST(req: NextRequest) {
           .join('; ') +
         '.' +
         (imageReport?.ok
-          ? ` Image: ${imageReport.perPlatform ? 'one generation per platform' : 'generated once and cropped per platform'}, prompt ${imageReport.promptSource}.`
+          ? ` Image: ${imageReport.perPlatform ? 'one generation per platform, each composed for its own frame' : 'generated once and fitted into each platform\'s frame'}, nothing cropped, prompt ${imageReport.promptSource}.`
           : imageReport
           ? ` Image NOT generated: ${imageReport.error}`
           : '') +

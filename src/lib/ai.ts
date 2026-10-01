@@ -187,6 +187,7 @@ export function imagePromptRefinePrompt(args: {
       return `- ${spec.label}: ${spec.imageSize[0]}x${spec.imageSize[1]} (${spec.ratio})`;
     })
     .join('\n');
+  const oneFrame = args.platforms.length === 1 ? specFor(args.platforms[0]) : null;
 
   return `You are an art director writing one image-generation prompt.
 
@@ -197,8 +198,9 @@ CONTEXT
 - brand niche: ${args.niche || 'not specified'}
 - tone: ${args.tone || 'not specified'}
 ${args.postText ? `- the post it illustrates: ${String(args.postText).slice(0, 400)}` : ''}
-- the image is a single photograph or illustration used as the post's picture, then cropped per platform:
+- the image is a single photograph or illustration used as the post's picture, at these sizes:
 ${sizes}
+${oneFrame ? `- COMPOSE FOR THIS FRAME: ${oneFrame.ratio} (${oneFrame.imageSize[0]}x${oneFrame.imageSize[1]}). The image is shown whole, never cropped, so fill this frame and place the subject with comfortable margins - do not run detail off the edges.` : ''}
 
 WRITE one prompt of 40-80 words covering, in this order: subject and what it is doing; setting; light and
 time of day; style and lens feel; colour direction; composition and where the empty space is.
@@ -206,7 +208,7 @@ time of day; style and lens feel; colour direction; composition and where the em
 HARD RULES
 - absolutely no text, letters, words, logos, watermarks or UI screenshots in the image
 - no collages, no split panels, no before/after
-- keep the frame's centre clear enough to survive a square and a 4:5 crop
+- the whole picture is kept and shown complete; never compose something that only reads after being cut
 - describe an image, not a poster: no "banner", no "thumbnail", no "cover"
 
 Answer with the prompt alone - no preamble, no quotes, no markdown.`;

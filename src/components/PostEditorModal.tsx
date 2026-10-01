@@ -138,7 +138,8 @@ export default function PostEditorModal({ post, dayIndex, llm, onSave, onClose }
       onSave(dayIndex, post.id, { mediaUrl: d.mediaUrl });
       setNote(
         `Image regenerated at ${d.width}×${d.height}${d.size ? ` (${d.size})` : ''} (${(d.bytes / 1048576).toFixed(2)} MB, quality ${d.quality}` +
-          `${d.resized ? ', resized to the exact platform size' : ', NOT resized'}) and saved to the post.` +
+          `${d.mode === 'resize' ? ', the shape already matched so it is a straight resize' : d.mode ? `, fitted whole into the frame (${d.content} shown, ${d.bandPx}px blurred edge) - nothing cropped` : ', NOT resized'}` +
+          `) and saved to the post.` +
           (d.promptRefined ? ' Your brief was fine-tuned into the prompt below.' : '') +
           (d.note ? ` ${d.note}.` : '')
       );
@@ -313,7 +314,8 @@ export default function PostEditorModal({ post, dayIndex, llm, onSave, onClose }
             <div className="mb-2">
               <div className="text-[10px] font-mono text-zinc-500 mb-1">
                 Image prompt — describe what you want. I fine-tune it (subject, setting, light, style, "no text in
-                the image") before it reaches the image model, then generate at this platform&apos;s exact size.
+                the image") and aim it at this platform&apos;s own frame before it reaches the image model. The whole
+                picture is kept — it is never cropped.
               </div>
               <textarea
                 value={imagePrompt}
