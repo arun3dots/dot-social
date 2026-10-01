@@ -54,6 +54,9 @@ export interface PostItem {
   publishedAt?: string;
   /** People to mention, as urn:li:person:... (LinkedIn only, and only for connected members). */
   taggedUsers?: { name: string; urn: string }[];
+  /** Result of a manual "Dispatch Now" - kept apart from the scheduled publish. */
+  manualExternalUrl?: string;
+  manualPublishedAt?: string;
 }
 
 export interface CalendarDay {

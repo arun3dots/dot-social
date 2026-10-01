@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     const now = Date.now();
 
     const cand = await pool.query(
-      `SELECT id, user_id, platform, content, media_url, scheduled_time, status
+      `SELECT id, user_id, platform, content, media_url, scheduled_time, status, tagged_users
        FROM posts WHERE status IN ('APPROVED', 'SCHEDULED')
        ORDER BY scheduled_time ASC LIMIT 200`
     );
@@ -69,11 +69,13 @@ export async function POST(req: NextRequest) {
         platform: p.platform,
         content: p.content,
         mediaUrl: p.media_url,
+        taggedUsers: Array.isArray(p.tagged_users) ? p.tagged_users : null,
       });
 
       // SKIPPED keeps its APPROVED/SCHEDULED status so a later tick retries once the
       // account is really connected. FAILED is recorded as FAILED. Only a platform
-      // acceptance yields PUBLISHED.
+      // acceptance yields PUBLISHED - and a post already dispatched manually reaches this
+      // point still APPROVED, which is what makes the scheduled publish happen.
       const statusAfter = out.status === 'PUBLISHED' ? 'PUBLISHED' : out.status === 'SKIPPED' ? p.status : 'FAILED';
 
       await pool.query(

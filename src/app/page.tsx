@@ -315,13 +315,13 @@ export default function CreatorHomePage() {
     }
   };
 
-  const handlePublishSinglePost = async (post: PostItem) => {
+  const handlePublishSinglePost = async (post: PostItem, opts?: { keepScheduled?: boolean }) => {
     setPublishingId(post.id);
     try {
       const res = await fetch('/api/calendar/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId: post.id }),
+        body: JSON.stringify({ postId: post.id, keepScheduled: opts?.keepScheduled !== false }),
       });
 
       const data = await res.json();
@@ -346,18 +346,31 @@ export default function CreatorHomePage() {
           return;
         }
         const publishedUrl = result.externalUrl;
+        // The server decides the status: a manual dispatch that keeps the schedule leaves the post
+        // APPROVED (so it still fires at its scheduled time) and records the manual post separately.
+        const manual = data.manual || {};
+        const keepsSchedule = manual.keepScheduled !== false;
         if (calendar) {
           const updatedDays = calendar.days.map((day) => ({
             ...day,
             posts: day.posts.map((p) =>
               p.id === post.id
-                ? { ...p, status: 'PUBLISHED' as const, externalUrl: publishedUrl, publishedAt: new Date().toISOString() }
+                ? {
+                    ...p,
+                    status: (manual.statusAfter || p.status) as PostItem['status'],
+                    manualExternalUrl: manual.accepted ? publishedUrl : p.manualExternalUrl,
+                    manualPublishedAt: manual.accepted
+                      ? manual.manualPublishedAt || new Date().toISOString()
+                      : p.manualPublishedAt,
+                    externalUrl: keepsSchedule ? p.externalUrl : publishedUrl,
+                    publishedAt: keepsSchedule ? p.publishedAt : new Date().toISOString(),
+                  }
                 : p
             ),
           }));
           setCalendar({ ...calendar, days: updatedDays });
         }
-        showToast(`Dispatched to ${post.platform}!`);
+        showToast(data.note || `Dispatched to ${post.platform}!`);
       } else {
         throw new Error(data.details || 'Publishing failed');
       }
@@ -426,6 +439,8 @@ export default function CreatorHomePage() {
                 onApproveBatch={handleApproveBatch}
                 onPublishSinglePost={handlePublishSinglePost}
                 publishingId={publishingId}
+                connections={connections}
+                platformStatus={platformStatus}
                 llm={{
                   provider: String(llmConfig.provider || '').toLowerCase(),
                   apiKey: llmConfig.apiKey,

@@ -129,6 +129,10 @@ export async function initPostgresTables() {
     await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS external_url TEXT;`);
     // People to mention in the post (urn:li:person:...), kept as JSON so a post can carry several.
     await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS tagged_users JSONB DEFAULT '[]'::jsonb;`);
+    // A manual "Dispatch Now" does not consume the schedule, so its result is recorded separately
+    // from the scheduled publish (published_at / external_url).
+    await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS manual_published_at TIMESTAMPTZ;`);
+    await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS manual_external_url TEXT;`);
 
     await client.query(`CREATE INDEX IF NOT EXISTS idx_posts_user ON posts(user_id);`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_posts_calendar ON posts(calendar_id);`);
