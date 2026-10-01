@@ -3,6 +3,7 @@
 import React, { useRef, useState } from 'react';
 import { PostItem } from '@/types';
 import { specFor } from '@/lib/platformSpecs';
+import PlatformPreview from '@/components/PlatformPreview';
 
 interface Props {
   post: PostItem;
@@ -47,6 +48,9 @@ export default function PostEditorModal({ post, dayIndex, llm, onSave, onClose }
   const [tagInput, setTagInput] = useState('');
   const [tagName, setTagName] = useState('');
   const [quality, setQuality] = useState(llm?.imageQuality || 'low');
+  // The prompt is treated as a brief by the server: it is fine-tuned before the image model sees it.
+  const [imagePrompt, setImagePrompt] = useState(post.mediaPrompt || '');
+  const [lastPromptUsed, setLastPromptUsed] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const overLimit = content.length > spec.maxChars;
@@ -124,12 +128,19 @@ export default function PostEditorModal({ post, dayIndex, llm, onSave, onClose }
         target: 'image',
         imageApiKey: llm?.imageApiKey,
         imageQuality: quality,
+        imagePrompt: imagePrompt.trim() || undefined,
       });
       setMediaUrl(d.mediaUrl);
+      if (d.prompt) {
+        setImagePrompt(d.prompt);
+        setLastPromptUsed(d.prompt);
+      }
       onSave(dayIndex, post.id, { mediaUrl: d.mediaUrl });
       setNote(
-        `Image regenerated at ${d.width}×${d.height} (${(d.bytes / 1048576).toFixed(2)} MB, quality ${d.quality}` +
-          `${d.resized ? ', resized to the exact platform size' : ', NOT resized'}) and saved to the post.`
+        `Image regenerated at ${d.width}×${d.height}${d.size ? ` (${d.size})` : ''} (${(d.bytes / 1048576).toFixed(2)} MB, quality ${d.quality}` +
+          `${d.resized ? ', resized to the exact platform size' : ', NOT resized'}) and saved to the post.` +
+          (d.promptRefined ? ' Your brief was fine-tuned into the prompt below.' : '') +
+          (d.note ? ` ${d.note}.` : '')
       );
     });
 
@@ -258,7 +269,7 @@ export default function PostEditorModal({ post, dayIndex, llm, onSave, onClose }
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="text-xs font-mono text-zinc-300">
-                Image <span className="text-zinc-500">({spec.imageSize[0]}×{spec.imageSize[1]} for {spec.label})</span>
+                Image <span className="text-zinc-500">({spec.imageSize[0]}×{spec.imageSize[1]} · {spec.ratio} for {spec.label})</span>
               </div>
               <div className="flex items-center gap-2">
                 <select
@@ -297,6 +308,24 @@ export default function PostEditorModal({ post, dayIndex, llm, onSave, onClose }
                     e.target.value = '';
                   }}
                 />
+              </div>
+            </div>
+            <div className="mb-2">
+              <div className="text-[10px] font-mono text-zinc-500 mb-1">
+                Image prompt — describe what you want. I fine-tune it (subject, setting, light, style, "no text in
+                the image") before it reaches the image model, then generate at this platform&apos;s exact size.
+              </div>
+              <textarea
+                value={imagePrompt}
+                onChange={(e) => setImagePrompt(e.target.value)}
+                rows={2}
+                placeholder="e.g. a founder's desk at sunrise, laptop open, coffee, warm light, shallow depth of field"
+                className="w-full bg-[#0b0e14] border border-zinc-700 rounded px-2 py-1.5 text-[11px] font-mono text-zinc-100 focus:outline-none focus:border-cyan-600"
+              />
+              <div className="text-[10px] font-mono text-zinc-600 mt-1">
+                {lastPromptUsed
+                  ? `the prompt actually sent: ${lastPromptUsed.slice(0, 140)}${lastPromptUsed.length > 140 ? '…' : ''}`
+                  : 'leave it empty to reuse the prompt stored with this post'}
               </div>
             </div>
             {mediaUrl ? (
@@ -367,6 +396,14 @@ export default function PostEditorModal({ post, dayIndex, llm, onSave, onClose }
               onChange={(e) => setScheduledTime(e.target.value)}
               className="bg-[#0b0e14] border border-zinc-700 rounded px-2 py-1.5 text-[11px] font-mono text-zinc-100 focus:outline-none focus:border-cyan-600"
             />
+          </div>
+
+          {/* how it will actually look, per platform */}
+          <div>
+            <div className="text-xs font-mono text-zinc-300 mb-1">
+              Preview <span className="text-zinc-500">(updates as you type — same copy, each platform&apos;s own frame, image ratio and truncation)</span>
+            </div>
+            <PlatformPreview content={content} mediaUrl={mediaUrl} ownPlatform={post.platform} />
           </div>
 
           {note && <div className="text-[11px] font-mono text-emerald-400 leading-relaxed">{note}</div>}

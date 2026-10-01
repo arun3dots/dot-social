@@ -15,6 +15,9 @@ interface Props {
     platforms: Platform[];
     generateContent: boolean;
     content?: string;
+    generateImage?: boolean;
+    imagePrompt?: string;
+    imagePerPlatform?: boolean;
   }) => Promise<{ ok: boolean; note: string; posts?: PostItem[]; dayIndex?: number }>;
   onCreated: (posts: PostItem[], dayIndex: number, note: string) => void;
   onClose: () => void;
@@ -47,6 +50,9 @@ export default function NewPostDialog({ initialDate, dayIndex, onAddPost, onCrea
   const [content, setContent] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [withImage, setWithImage] = useState(true);
+  const [imagePrompt, setImagePrompt] = useState('');
+  const [perPlatformImage, setPerPlatformImage] = useState(false);
 
   // Keep the canonical order so the posts are created platform by platform, predictably.
   const toggle = (p: Platform) =>
@@ -71,6 +77,9 @@ export default function NewPostDialog({ initialDate, dayIndex, onAddPost, onCrea
         platforms,
         generateContent: mode === 'generate',
         content: mode === 'write' ? content : undefined,
+        generateImage: withImage,
+        imagePrompt: withImage && imagePrompt.trim() ? imagePrompt.trim() : undefined,
+        imagePerPlatform: withImage && perPlatformImage,
       });
       if (!res.ok) {
         setError(res.note);
@@ -180,6 +189,57 @@ export default function NewPostDialog({ initialDate, dayIndex, onAddPost, onCrea
             )}
           </div>
 
+          <div className="flex flex-col gap-2 border-t border-zinc-800 pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-500">Image</span>
+              <span className="text-[9px] text-zinc-600">quality set in Settings (~$0.01/image at low)</span>
+            </div>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input type="checkbox" checked={withImage} onChange={(e) => setWithImage(e.target.checked)} className="mt-0.5" />
+              <span className={withImage ? 'text-zinc-200' : 'text-zinc-500'}>
+                generate an image
+                <span className="text-zinc-500">
+                  {' '}— generated once, then cropped to each platform&apos;s own size below
+                </span>
+              </span>
+            </label>
+
+            {withImage && (
+              <>
+                <textarea
+                  value={imagePrompt}
+                  onChange={(e) => setImagePrompt(e.target.value)}
+                  rows={3}
+                  placeholder="Describe the image (optional) — e.g. a founder's desk at sunrise, laptop open, coffee, warm light, shallow depth of field. I fine-tune whatever you write before it reaches the image model."
+                  className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-zinc-200 font-mono text-[11px] resize-y"
+                />
+                <div className="flex flex-col gap-1 pl-2 text-[10px] text-zinc-500">
+                  <span>
+                    {imagePrompt.trim()
+                      ? 'your brief is fine-tuned under the hood (subject, setting, light, style, no text in the image), then generated'
+                      : 'leave it empty and the prompt written with the copy is used'}
+                  </span>
+                  <span className="text-zinc-600">
+                    sizes: X 1600×900 (16:9) · LinkedIn 1200×1200 (1:1) · Instagram 1080×1350 (4:5) — never the same
+                    image size twice
+                  </span>
+                </div>
+                <label className="flex items-start gap-2 cursor-pointer pl-2">
+                  <input
+                    type="checkbox"
+                    checked={perPlatformImage}
+                    onChange={(e) => setPerPlatformImage(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span className={perPlatformImage ? 'text-zinc-300' : 'text-zinc-500'}>
+                    a separate image per platform instead
+                    <span className="text-zinc-600"> — one generation each, so every platform is native to its own ratio</span>
+                  </span>
+                </label>
+              </>
+            )}
+          </div>
+
           <div className="text-zinc-500 leading-relaxed border-t border-zinc-800 pt-3">
             {count > 1 ? (
               <>
@@ -190,6 +250,12 @@ export default function NewPostDialog({ initialDate, dayIndex, onAddPost, onCrea
               <>
                 Created as <span className="text-zinc-300">PENDING_APPROVAL</span> at that platform's usual slot
                 on the day you pick.
+              </>
+            )}{' '}
+            {withImage && (
+              <>
+                {' '}With an image each
+                {perPlatformImage ? ' (generated separately per platform)' : ' (one image, cropped per platform)'}.
               </>
             )}{' '}
             You can change any of it afterwards in the editor.

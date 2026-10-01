@@ -20,32 +20,37 @@ from datetime import datetime, timedelta, timezone
 
 # ---------------------------------------------------------------- platform rules
 PLATFORM_SPECS = {
+    # Feed image sizes differ per platform on purpose: X is landscape, LinkedIn square, Instagram 4:5.
+    # openai_size is what the image model can actually produce; the exact feed size is derived from it.
     "TWITTER": {
         "label": "X / Twitter",
         "max_chars": 280,
         "hashtags": "0-2",
         "tone": "punchy hook in the first 6 words, ONE idea, no preamble, no corporate speak",
         "structure": "hook -> one concrete point -> short question or CTA",
-        "image_size": (1600, 900),
+        "image_size": (1600, 900),      # 16:9 landscape
         "openai_size": "1536x1024",
+        "ratio": "16:9",
     },
     "LINKEDIN": {
         "label": "LinkedIn",
-        "max_chars": 1500,
+        "max_chars": 3000,
         "hashtags": "3-5",
         "tone": "professional and insight-led, one clear argument, short lines, no hype",
         "structure": "hook -> context -> 3 short bullets -> takeaway -> question",
-        "image_size": (1080, 1350),
-        "openai_size": "1024x1536",
+        "image_size": (1200, 1200),     # 1:1 square: LinkedIn's most reliable feed format
+        "openai_size": "1024x1024",
+        "ratio": "1:1",
     },
     "INSTAGRAM": {
         "label": "Instagram",
-        "max_chars": 800,
+        "max_chars": 2200,
         "hashtags": "5-8",
         "tone": "visual-first, hook line then short scannable body, emoji used sparingly",
         "structure": "hook -> 3 quick value points -> save/share CTA -> hashtags",
-        "image_size": (1080, 1350),
+        "image_size": (1080, 1350),     # 4:5 portrait
         "openai_size": "1024x1536",
+        "ratio": "4:5",
     },
 }
 PLATFORMS = ["TWITTER", "LINKEDIN", "INSTAGRAM"]
@@ -171,6 +176,61 @@ def resize_to_exact(path, target):
         return False, str(e)[:160]
 
 
+
+def choose_master_size(platforms):
+    """The image-model size that serves this set of platforms best.
+
+    One generation cannot be native to a landscape and a portrait feed at once, so the master follows
+    the most demanding aspect in the set; the others are cover-cropped from it.
+    """
+    plats = {p.upper() for p in platforms}
+    if "TWITTER" in plats:
+        return "1536x1024"
+    if "INSTAGRAM" in plats:
+        return "1024x1536"
+    return "1024x1024"
+
+
+def derive_for_platforms(master_path, platforms, out_dir, prefix):
+    """Cover-crop one master into each platform's exact feed size.
+
+    Returns {PLATFORM: {path, width, height, bytes, upscaled}} - upscaled tells the truth about an
+    image that had to be enlarged to reach the target, rather than pretending every output is native.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        return {p: {"error": "Pillow not installed"} for p in platforms}
+
+    out = {}
+    with Image.open(master_path) as opened:
+        master = opened.convert("RGB")
+        mw, mh = master.size
+        for platform in platforms:
+            spec = PLATFORM_SPECS.get(platform)
+            if not spec:
+                continue
+            tw, th = spec["image_size"]
+            scale = max(tw / mw, th / mh)  # cover: fill the frame, then crop the overflow
+            big = master.resize((max(tw, int(round(mw * scale))), max(th, int(round(mh * scale)))), Image.LANCZOS)
+            left = (big.width - tw) // 2
+            top = (big.height - th) // 2
+            final = big.crop((left, top, left + tw, top + th))
+            path = Path(out_dir) / f"{prefix}_{platform.lower()}.png"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            final.save(path, "PNG")
+            out[platform] = {
+                "path": str(path),
+                "width": tw,
+                "height": th,
+                "bytes": path.stat().st_size,
+                "upscaled": scale > 1.001,
+                "from": f"{mw}x{mh}",
+                "ratio": spec.get("ratio"),
+            }
+    return out
+
+
 # ---------------------------------------------------------------------- fallback
 def deterministic_calendar(niche, audience, tone, days, pillars, screen_name):
     now = datetime.now(timezone.utc)
@@ -241,7 +301,83 @@ def main():
     ap.add_argument("--singleImage", default="")
     ap.add_argument("--singleImagePrompt", default="")
     ap.add_argument("--singleImageOut", default="")
+    # Campaign mode: one image prompt for a post that goes to several platforms at once. The image is
+    # generated once and each platform gets its own exact-size derivative (or, with --imagePerPlatform,
+    # one generation per platform in that platform's own aspect).
+    ap.add_argument("--campaignImage", action="store_true")
+    ap.add_argument("--campaignPrompt", default="")
+    ap.add_argument("--campaignPlatforms", default="")
+    ap.add_argument("--campaignOutDir", default="")
+    ap.add_argument("--campaignPrefix", default="campaign")
+    ap.add_argument("--imagePerPlatform", action="store_true")
     args = ap.parse_args()
+
+
+    # --- campaign image: one prompt, per-platform sizes ---
+    if args.campaignImage:
+        platforms = [p.strip().upper() for p in str(args.campaignPlatforms or "").split(",") if p.strip()]
+        platforms = [p for p in platforms if p in PLATFORM_SPECS]
+        if not platforms:
+            print(json.dumps({"ok": False, "error": "no known platform in --campaignPlatforms"}))
+            return
+        if not args.imageApiKey:
+            print(json.dumps({"ok": False, "error": "no image API key available (set OPENAI_API_KEY)"}))
+            return
+        if not str(args.campaignPrompt or "").strip():
+            print(json.dumps({"ok": False, "error": "campaignPrompt is empty"}))
+            return
+
+        quality = args.imageQuality if args.imageQuality in ("low", "medium", "high") else "low"
+        model = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")
+        out_dir = Path(args.campaignOutDir or args.imageDir or ".")
+        prefix = str(args.campaignPrefix or "campaign")
+        outputs = {}
+
+        if args.imagePerPlatform:
+            # Best quality: each platform is generated in its own aspect, no cropping involved.
+            for platform in platforms:
+                spec = PLATFORM_SPECS[platform]
+                out = out_dir / f"{prefix}_{platform.lower()}.png"
+                ok, detail = generate_image_openai(args.imageApiKey, args.campaignPrompt, spec["openai_size"], out,
+                                                   quality=quality, model=model)
+                if not ok:
+                    outputs[platform] = {"error": detail}
+                    continue
+                rok, rdetail = resize_to_exact(out, spec["image_size"])
+                outputs[platform] = {
+                    "path": str(out),
+                    "width": spec["image_size"][0],
+                    "height": spec["image_size"][1],
+                    "bytes": out.stat().st_size if out.exists() else 0,
+                    "upscaled": False,
+                    "from": spec["openai_size"],
+                    "ratio": spec.get("ratio"),
+                    "resized": rok,
+                    "resizeDetail": rdetail,
+                }
+            print(json.dumps({"ok": True, "perPlatform": True, "master": None, "outputs": outputs,
+                              "prompt": args.campaignPrompt, "quality": quality}))
+            return
+
+        master_size = choose_master_size(platforms)
+        master_path = out_dir / f"{prefix}_master.png"
+        ok, detail = generate_image_openai(args.imageApiKey, args.campaignPrompt, master_size, master_path,
+                                           quality=quality, model=model)
+        if not ok:
+            print(json.dumps({"ok": False, "error": detail}))
+            return
+        outputs = derive_for_platforms(master_path, platforms, out_dir, prefix)
+        print(json.dumps({
+            "ok": True,
+            "perPlatform": False,
+            "master": {"path": str(master_path), "size": master_size,
+                       "bytes": master_path.stat().st_size if master_path.exists() else 0},
+            "masterSize": master_size,
+            "outputs": outputs,
+            "prompt": args.campaignPrompt,
+            "quality": quality,
+        }))
+        return
 
 
     # --- single-image regeneration (used by the post editor) ---

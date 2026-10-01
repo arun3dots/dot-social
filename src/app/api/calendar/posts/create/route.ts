@@ -1,23 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { spawn } from 'child_process';
+import path from 'path';
+import fs from 'fs';
 import pool, { initPostgresTables } from '@/lib/postgres';
 import { currentUserId } from '@/lib/session';
-import { complete, resolveKey, postPrompt, parsePostJson } from '@/lib/ai';
+import {
+  complete,
+  imagePromptRefinePrompt,
+  parsePostJson,
+  postPrompt,
+  resolveKey,
+  sanitiseImagePrompt,
+} from '@/lib/ai';
 import { specFor } from '@/lib/platformSpecs';
 
 /**
- * Add post(s) to a particular day of a calendar - one per selected platform.
+ * Add post(s) to a particular day of a calendar - one per selected platform - optionally with an image.
  *
- * Each platform gets its own generation call and its own copy: a 280-character X hook is not the same
- * writing as a LinkedIn argument, so the model is told which other platforms are getting the idea and
- * must write the version that only works on this one. It also returns an image prompt per platform,
- * stored as media_prompt so the editor's "Regenerate image" has something real to work from.
+ * Copy: one model call per platform, told which other platforms are getting the same idea, so the
+ * versions are genuinely different (a 280-character hook is not a LinkedIn argument).
+ *
+ * Image: the prompt can come from the user. A prompt typed by a person is treated as a BRIEF and is
+ * fine-tuned into a production image prompt first (subject, setting, light, style, composition, and
+ * "no text in the image"); with no brief, the image prompt the copy model wrote for that platform is
+ * used. The image is then generated once and each platform gets its own exact feed size derived from
+ * it - X 1600x900 (16:9), LinkedIn 1200x1200 (1:1), Instagram 1080x1350 (4:5). No platform shares
+ * another's dimensions. With imagePerPlatform the model is called once per platform instead, in that
+ * platform's own aspect, at the cost of one generation each.
  *
  * Ids are minted the way generation mints them (post_<calendarId>_<dayIndex>_<platform>), with an _xN
- * suffix when that day already has a post on the platform. A day outside the batch becomes a real day
- * in days_json, so an added post always has a date.
+ * suffix when that day already has a post on the platform. A day outside the batch becomes a real day.
  */
 const SLOTS: Record<string, number> = { TWITTER: 14, LINKEDIN: 15, INSTAGRAM: 18 };
 const PLATFORMS = ['TWITTER', 'LINKEDIN', 'INSTAGRAM'];
+
+function runGenerator(args: string[]): Promise<{ code: number; out: string; err: string }> {
+  return new Promise((resolve) => {
+    const child = spawn('python', args);
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (d) => {
+      out += d.toString();
+    });
+    child.stderr.on('data', (d) => {
+      err += d.toString();
+    });
+    child.on('close', (code) => resolve({ code: code ?? 1, out, err }));
+  });
+}
+
+/**
+ * The public URL for a generated file: /api/media/generated/<calendarId>/<file>.
+ *
+ * Built from the calendar id and the file's own name, NOT by slicing the absolute path - the repo
+ * itself lives under "Social-media/media", so the first "/media/" in the path is the wrong one.
+ */
+function mediaUrlFor(calendarId: string, filePath: string): string {
+  const base = String(filePath).replace(/\\/g, '/').split('/').pop() || '';
+  return base ? `/api/media/generated/${calendarId}/${base}` : '';
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -84,44 +125,44 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'A date is required as YYYY-MM-DD when the day has none yet.' }, { status: 400 });
     }
 
-    // An explicit time applies to every post; otherwise each platform keeps its own slot.
     const explicitTime = body.scheduledTime ? String(body.scheduledTime) : '';
     if (explicitTime && !Number.isFinite(Date.parse(explicitTime))) {
       return NextResponse.json({ error: 'scheduledTime is not a date' }, { status: 400 });
     }
 
-    // Copy written by the user is used verbatim on every selected platform; nothing is invented over it.
     const explicitContent = typeof body.content === 'string' && body.content.trim() ? String(body.content) : '';
     const wantsGeneration = body.generateContent !== false;
-    const resolved = wantsGeneration && !explicitContent ? resolveKey(String(body.provider || '').toLowerCase(), body.apiKey) : null;
+    const key = wantsGeneration && !explicitContent ? resolveKey(String(body.provider || '').toLowerCase(), body.apiKey) : null;
     const theme = String(body.theme || day?.theme || '');
 
-    const createdPosts: any[] = [];
-    const results: any[] = [];
+    // ---- 1. copy, one call per platform ----
+    type Draft = { platform: string; content: string; imagePrompt: string | null; generated: boolean; note: string };
+    const drafts: Draft[] = [];
 
     for (const platform of platforms) {
       const spec = specFor(platform);
-      const slotHour = SLOTS[platform] ?? 14;
-      const scheduledTime = explicitTime || new Date(`${dateStr}T${String(slotHour).padStart(2, '0')}:00:00Z`).toISOString();
-
       let content = explicitContent;
       let imagePrompt: string | null = null;
       let generated = false;
       let note = '';
 
       if (!content && wantsGeneration) {
-        if (!resolved) {
+        if (!key) {
           note = 'no model key available (no BYOK key sent and the server has none) - created blank';
         } else {
-          const prompt = postPrompt({
-            platform,
-            niche: calendar.niche,
-            audience: calendar.audience,
-            tone: calendar.tone,
-            theme,
-            siblings: platforms,
-          });
-          const out = await complete(resolved.provider, resolved.key, prompt, 1200);
+          const out = await complete(
+            key.provider,
+            key.key,
+            postPrompt({
+              platform,
+              niche: calendar.niche,
+              audience: calendar.audience,
+              tone: calendar.tone,
+              theme,
+              siblings: platforms,
+            }),
+            1200
+          );
           if (out.ok) {
             const parsed = parsePostJson(out.text);
             content = (parsed.content || '').trim().slice(0, spec.maxChars);
@@ -138,7 +179,154 @@ export async function POST(req: NextRequest) {
         note = 'created blank - write it in the editor';
       }
 
-      // Mint an id generation would recognise, uniquified against what is already stored.
+      drafts.push({ platform, content, imagePrompt, generated, note });
+    }
+
+    // ---- 2. the image: one prompt, per-platform sizes ----
+    const wantsImage = body.generateImage === true;
+    const userImagePrompt = String(body.imagePrompt || '').trim();
+    const perPlatformImages = body.imagePerPlatform === true;
+
+    let imageReport: any = null;
+    const mediaByPlatform = new Map<string, string>();
+    let sharedPrompt = '';
+
+    if (wantsImage) {
+      const imageApiKey = String(body.imageApiKey || '').trim() || (process.env.OPENAI_API_KEY || '').trim();
+      if (!imageApiKey) {
+        imageReport = {
+          ok: false,
+          error: 'no image API key available (set OPENAI_API_KEY - DeepSeek cannot generate images)',
+        };
+      } else {
+        const profileQuality = await pool.query('SELECT image_quality FROM users WHERE id = $1', [userId]);
+        const requestedQuality = String(body.imageQuality || profileQuality.rows[0]?.image_quality || 'low').toLowerCase();
+        const imageQuality = ['low', 'medium', 'high'].includes(requestedQuality) ? requestedQuality : 'low';
+
+        // A brief from the user is fine-tuned into a production prompt; otherwise the prompt the copy
+        // model wrote for this campaign is used, and we say which of the two happened.
+        let promptSource = 'the image prompt written with the copy';
+        let refined = false;
+        let refineNote: string | null = null;
+
+        if (userImagePrompt) {
+          promptSource = 'fine-tuned from your brief';
+          if (!key) {
+            sharedPrompt = userImagePrompt;
+            refineNote = 'no model key available to fine-tune it, so your words were used as written';
+          } else {
+            const fin = await complete(
+              key.provider,
+              key.key,
+              imagePromptRefinePrompt({
+                userPrompt: userImagePrompt,
+                platforms,
+                niche: calendar.niche,
+                tone: calendar.tone,
+                postText: drafts.map((d) => d.content).find(Boolean),
+              }),
+              500
+            );
+            if (fin.ok) {
+              const cleaned = sanitiseImagePrompt(fin.text);
+              if (cleaned) {
+                sharedPrompt = cleaned;
+                refined = true;
+              } else refineNote = 'the model returned nothing usable, so your words were used as written';
+            } else refineNote = `${fin.reason} - your words were used as written`;
+          }
+          if (!sharedPrompt) sharedPrompt = userImagePrompt;
+        } else {
+          sharedPrompt = (drafts.map((d) => d.imagePrompt).find(Boolean) as string) || '';
+          if (!sharedPrompt) {
+            sharedPrompt =
+              `An editorial image for a post about ${calendar.niche || 'this brand'} for ${calendar.audience || 'its audience'}, ` +
+              `clean modern style, natural light, no text or lettering in the image.`;
+            promptSource = 'described from the calendar topic (no copy prompt was available)';
+          }
+        }
+
+        const dir = path.join(process.cwd(), 'media', 'generated', String(calendar.id));
+        fs.mkdirSync(dir, { recursive: true });
+        const stamp = Date.now().toString(36);
+        const prefix = `${calendar.id}_${dateStr}_img${stamp}`;
+        const scriptPath = path.join(process.cwd(), 'tools', 'generate_calendar.py');
+
+        const args = [
+          scriptPath,
+          '--campaignImage',
+          '--campaignPrompt', sharedPrompt,
+          '--campaignPlatforms', platforms.join(','),
+          '--campaignOutDir', dir,
+          '--campaignPrefix', prefix,
+          '--imageQuality', imageQuality,
+          '--imageApiKey', imageApiKey,
+        ];
+        if (perPlatformImages) args.push('--imagePerPlatform');
+
+        const run = await runGenerator(args);
+        let parsed: any = null;
+        try {
+          parsed = JSON.parse(run.out.trim().split('\n').pop() || '{}');
+        } catch {
+          parsed = null;
+        }
+
+        if (run.code !== 0 || !parsed?.ok) {
+          imageReport = {
+            ok: false,
+            error: parsed?.error || run.err.slice(0, 300) || 'image generation failed',
+            prompt: sharedPrompt,
+            promptSource,
+            promptRefined: refined,
+          };
+        } else {
+          const files: any = {};
+          for (const [platform, info] of Object.entries(parsed.outputs || {})) {
+            const anyInfo = info as any;
+            if (anyInfo?.error || !anyInfo?.path) {
+              files[platform] = { error: anyInfo?.error || 'no file' };
+              continue;
+            }
+            const url = mediaUrlFor(String(calendar.id), anyInfo.path);
+            files[platform] = {
+              url,
+              fileName: path.basename(String(anyInfo.path).replace(/\\/g, '/')),
+              width: anyInfo.width,
+              height: anyInfo.height,
+              bytes: anyInfo.bytes,
+              ratio: anyInfo.ratio,
+              upscaled: !!anyInfo.upscaled,
+              from: anyInfo.from,
+            };
+            if (url) mediaByPlatform.set(platform, url);
+          }
+          imageReport = {
+            ok: true,
+            perPlatform: !!parsed.perPlatform,
+            quality: imageQuality,
+            prompt: sharedPrompt,
+            promptSource,
+            promptRefined: refined,
+            yourPrompt: userImagePrompt || null,
+            note: refineNote,
+            master: parsed.master || null,
+            files,
+          };
+        }
+      }
+    }
+
+    // ---- 3. store ----
+    const createdPosts: any[] = [];
+    const results: any[] = [];
+
+    for (const draft of drafts) {
+      const platform = draft.platform;
+      const spec = specFor(platform);
+      const slotHour = SLOTS[platform] ?? 14;
+      const scheduledTime = explicitTime || new Date(`${dateStr}T${String(slotHour).padStart(2, '0')}:00:00Z`).toISOString();
+
       const baseId = `post_${calendar.id}_${dayIndex}_${platform.toLowerCase()}`;
       let id = baseId;
       let n = 1;
@@ -148,35 +336,40 @@ export async function POST(req: NextRequest) {
         if (n > 50) return NextResponse.json({ error: 'could not mint a unique post id' }, { status: 500 });
       }
 
+      // Prefer the prompt written for THIS platform, so a later regeneration stays platform-specific.
+      const storedPrompt = draft.imagePrompt || (wantsImage ? sharedPrompt : null);
+      const mediaUrl = mediaByPlatform.get(platform) || null;
+
       await pool.query(
         `INSERT INTO posts (id, calendar_id, user_id, day_index, platform, content, media_prompt, media_url, scheduled_time, status, tagged_users)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8, 'PENDING_APPROVAL', '[]'::jsonb)`,
-        [id, calendar.id, userId, dayIndex, platform, content || null, imagePrompt, scheduledTime]
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'PENDING_APPROVAL', '[]'::jsonb)`,
+        [id, calendar.id, userId, dayIndex, platform, draft.content || null, storedPrompt, mediaUrl, scheduledTime]
       );
 
-      const post = {
+      const imageFile = imageReport?.ok ? imageReport.files?.[platform] : null;
+      createdPosts.push({
         id,
         platform,
-        content,
-        mediaPrompt: imagePrompt,
-        mediaUrl: null,
+        content: draft.content,
+        mediaPrompt: storedPrompt,
+        mediaUrl,
         scheduledTime,
         status: 'PENDING_APPROVAL',
         taggedUsers: [],
-      };
-      createdPosts.push(post);
+      });
       results.push({
         platform,
         id,
-        generated,
-        chars: content.length,
-        imagePrompt: !!imagePrompt,
+        generated: draft.generated,
+        chars: draft.content.length,
+        imagePrompt: !!storedPrompt,
+        image: imageFile && !imageFile.error ? `${imageFile.width}x${imageFile.height}` : null,
+        imageError: imageFile?.error || null,
         slot: `${String(slotHour).padStart(2, '0')}:00 UTC`,
-        note: note || `generated ${content.length} characters`,
+        note: draft.note || `generated ${draft.content.length} characters`,
       });
     }
 
-    // A day outside the batch becomes a real day, so it has a date and shows in the calendar.
     if (!day) {
       const next = [...snapshot, { dayIndex, date: dateStr, theme, posts: [] }];
       await pool.query('UPDATE content_calendars SET days_json = $1::jsonb WHERE id = $2 AND user_id = $3', [
@@ -193,6 +386,7 @@ export async function POST(req: NextRequest) {
       posts: createdPosts,
       post: createdPosts[0], // single-platform callers keep working
       results,
+      images: imageReport,
       calendarId: calendar.id,
       dayIndex,
       date: dateStr,
@@ -200,10 +394,16 @@ export async function POST(req: NextRequest) {
       dueImmediately,
       note:
         `Created ${label} on ${dateStr}: ` +
-        results.map((r) => `${r.platform} ${r.chars} chars at ${r.slot} (${r.note})`).join('; ') +
+        results
+          .map((r) => `${r.platform} ${r.chars} chars${r.image ? ` + image ${r.image}` : ''} at ${r.slot} (${r.note})`)
+          .join('; ') +
         '.' +
-        (dueImmediately ? ' That time has already passed, so the scheduler treats it as due.' : '') +
-        (results.some((r) => !r.generated && r.chars === 0) ? ' Blank posts are yours to write in the editor.' : ''),
+        (imageReport?.ok
+          ? ` Image: ${imageReport.perPlatform ? 'one generation per platform' : 'generated once and cropped per platform'}, prompt ${imageReport.promptSource}.`
+          : imageReport
+          ? ` Image NOT generated: ${imageReport.error}`
+          : '') +
+        (dueImmediately ? ' That time has already passed, so the scheduler treats it as due.' : ''),
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

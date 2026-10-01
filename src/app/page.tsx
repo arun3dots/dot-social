@@ -301,6 +301,9 @@ export default function CreatorHomePage() {
     platforms: Platform[];
     generateContent: boolean;
     content?: string;
+    generateImage?: boolean;
+    imagePrompt?: string;
+    imagePerPlatform?: boolean;
   }): Promise<{ ok: boolean; note: string; posts?: PostItem[]; dayIndex?: number }> => {
     try {
       const res = await fetch('/api/calendar/posts/create', {
@@ -313,6 +316,9 @@ export default function CreatorHomePage() {
           platforms: args.platforms,
           generateContent: args.generateContent,
           content: args.content,
+          generateImage: args.generateImage === true,
+          imagePrompt: args.imagePrompt,
+          imagePerPlatform: args.imagePerPlatform === true,
           provider: String(llmConfig.provider || '').toLowerCase(),
           apiKey: llmConfig.apiKey,
         }),

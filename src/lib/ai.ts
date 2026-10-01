@@ -168,6 +168,62 @@ export function parsePostJson(text: string): { content: string; imagePrompt: str
   return { content: cleaned, imagePrompt: null };
 }
 
+/**
+ * Turn a short brief from the user into a prompt the image model can actually work from.
+ *
+ * The user's words are kept as the subject - this only fills in what an image model needs and a person
+ * usually leaves out (composition, light, style, what to exclude), plus the platform's own framing.
+ */
+export function imagePromptRefinePrompt(args: {
+  userPrompt: string;
+  platforms: string[];
+  niche?: string;
+  tone?: string;
+  postText?: string;
+}): string {
+  const sizes = args.platforms
+    .map((p) => {
+      const spec = specFor(p);
+      return `- ${spec.label}: ${spec.imageSize[0]}x${spec.imageSize[1]} (${spec.ratio})`;
+    })
+    .join('\n');
+
+  return `You are an art director writing one image-generation prompt.
+
+THE USER'S BRIEF (keep this as the subject, do not replace the idea)
+"${args.userPrompt}"
+
+CONTEXT
+- brand niche: ${args.niche || 'not specified'}
+- tone: ${args.tone || 'not specified'}
+${args.postText ? `- the post it illustrates: ${String(args.postText).slice(0, 400)}` : ''}
+- the image is a single photograph or illustration used as the post's picture, then cropped per platform:
+${sizes}
+
+WRITE one prompt of 40-80 words covering, in this order: subject and what it is doing; setting; light and
+time of day; style and lens feel; colour direction; composition and where the empty space is.
+
+HARD RULES
+- absolutely no text, letters, words, logos, watermarks or UI screenshots in the image
+- no collages, no split panels, no before/after
+- keep the frame's centre clear enough to survive a square and a 4:5 crop
+- describe an image, not a poster: no "banner", no "thumbnail", no "cover"
+
+Answer with the prompt alone - no preamble, no quotes, no markdown.`;
+}
+
+/** Whatever the model returned, keep it a single clean prompt. */
+export function sanitiseImagePrompt(text: string): string {
+  return String(text || '')
+    .replace(/^\s*```[a-z]*/i, '')
+    .replace(/```\s*$/, '')
+    .replace(/^\s*(image\s*prompt|prompt)\s*[:\-]\s*/i, '')
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .replace(/\s*\n\s*/g, ' ')
+    .trim()
+    .slice(0, 900);
+}
+
 export function hashtagPrompt(args: { platform: string; content: string; niche?: string }): string {
   const spec = specFor(args.platform);
   return `Suggest relevant, specific hashtags for this ${spec.label} post.

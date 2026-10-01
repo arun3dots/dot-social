@@ -4,7 +4,15 @@ import path from 'path';
 import fs from 'fs';
 import pool, { initPostgresTables } from '@/lib/postgres';
 import { currentUserId } from '@/lib/session';
-import { complete, hashtagPrompt, parseHashtags, resolveKey, rewritePrompt } from '@/lib/ai';
+import {
+  complete,
+  hashtagPrompt,
+  imagePromptRefinePrompt,
+  parseHashtags,
+  resolveKey,
+  rewritePrompt,
+  sanitiseImagePrompt,
+} from '@/lib/ai';
 import { specFor } from '@/lib/platformSpecs';
 
 /**
@@ -87,8 +95,36 @@ export async function POST(req: NextRequest) {
     const stamp = Date.now().toString(36);
     const fileName = `${post.calendar_id}_${post.day_index || 1}_${String(post.platform).toLowerCase()}_regen_${stamp}.png`;
     const outPath = path.join(dir, fileName);
-    const prompt = (post.media_prompt || '').trim() ||
+
+    // A prompt typed in the editor is treated as a brief: it is fine-tuned into a production image
+    // prompt first (composition, light, style, and "no text in the image"), then generated. Without one
+    // the stored prompt is reused, and if there is none either, a plain description of the post.
+    const userPrompt = String(body.imagePrompt || '').trim();
+    let prompt = (post.media_prompt || '').trim() ||
       `An editorial image for a ${spec.label} post about ${post.niche || 'the brand topic'}. Clean, modern, no text.`;
+    let refined = false;
+    let refineNote: string | null = null;
+    if (userPrompt) {
+      if (!key) {
+        prompt = userPrompt; // no model to refine with: use the user's words unchanged rather than inventing
+        refineNote = 'no model key available to fine-tune the prompt, so your words were used as written';
+      } else {
+        const fin = await complete(key.provider, key.key, imagePromptRefinePrompt({
+          userPrompt,
+          platforms: [post.platform],
+          niche: post.niche,
+          tone: post.tone,
+          postText: post.content,
+        }), 500);
+        if (fin.ok) {
+          const cleaned = sanitiseImagePrompt(fin.text);
+          if (cleaned) {
+            prompt = cleaned;
+            refined = true;
+          } else refineNote = 'the model returned nothing usable, so your prompt was used as written';
+        } else refineNote = `${fin.reason} - your prompt was used as written`;
+      }
+    }
 
     const scriptPath = path.join(process.cwd(), 'tools', 'generate_calendar.py');
     const child = spawn('python', [
@@ -115,7 +151,13 @@ export async function POST(req: NextRequest) {
     }
 
     const mediaUrl = `/api/media/generated/${post.calendar_id}/${fileName}`;
-    await pool.query('UPDATE posts SET media_url = $1 WHERE id = $2 AND user_id = $3', [mediaUrl, postId, userId]);
+    // Store the prompt that produced the image, refined or not, so the next regeneration starts there.
+    await pool.query('UPDATE posts SET media_url = $1, media_prompt = $2 WHERE id = $3 AND user_id = $4', [
+      mediaUrl,
+      prompt,
+      postId,
+      userId,
+    ]);
     return NextResponse.json({
       success: true,
       target,
@@ -126,6 +168,10 @@ export async function POST(req: NextRequest) {
       quality: parsed.quality,
       resized: parsed.resized,
       prompt,
+      promptRefined: refined,
+      yourPrompt: userPrompt || null,
+      note: refineNote,
+      size: `${spec.imageSize[0]}x${spec.imageSize[1]} (${spec.ratio})`,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
