@@ -142,6 +142,25 @@ export async function POST(req: NextRequest) {
 
     const days: any[] = Array.isArray(calendar.days) ? calendar.days : [];
 
+    // Dates and times are the server's decision, not the model's. The model has produced days in
+    // April 2025 for a calendar generated in October 2026, which made every post instantly overdue.
+    // Day 1 starts tomorrow, consecutive days follow, and every platform keeps its own slot.
+    const SLOT_HOUR: Record<string, number> = { TWITTER: 14, LINKEDIN: 15, INSTAGRAM: 18 };
+    days.sort((a: any, b: any) => Number(a?.dayIndex ?? 0) - Number(b?.dayIndex ?? 0));
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const baseUtc = Date.UTC(tomorrow.getUTCFullYear(), tomorrow.getUTCMonth(), tomorrow.getUTCDate());
+    days.forEach((d: any, i: number) => {
+      d.dayIndex = i + 1;
+      const dayDate = new Date(baseUtc + i * 24 * 60 * 60 * 1000);
+      d.date = dayDate.toISOString().slice(0, 10);
+      for (const p of (d.posts || [])) {
+        const h = SLOT_HOUR[String(p.platform)] ?? 14;
+        p.scheduledTime = new Date(
+          Date.UTC(dayDate.getUTCFullYear(), dayDate.getUTCMonth(), dayDate.getUTCDate(), h, 0, 0)
+        ).toISOString();
+      }
+    });
+
     // The model invents post ids ("p1_tw"). Give every post the SAME id it will have in the
     // database, so the studio can approve/dispatch a post by the id the server stored - without
     // this, an approval sent from the UI matches no row.

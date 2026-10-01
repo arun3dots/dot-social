@@ -6,6 +6,7 @@ import SocialAccountsCard, { PlatformStatus } from '@/components/SocialAccountsC
 import LLMSelectorCard from '@/components/LLMSelectorCard';
 import NicheInputCard from '@/components/NicheInputCard';
 import CalendarReviewBoard from '@/components/CalendarReviewBoard';
+import CalendarMonthView from '@/components/CalendarMonthView';
 import SettingsCard from '@/components/SettingsCard';
 import LogsViewer from '@/components/LogsViewer';
 import SubscriptionModal from '@/components/SubscriptionModal';
@@ -46,6 +47,33 @@ export default function CreatorHomePage() {
   const [isSubModalOpen, setIsSubModalOpen] = useState(false);
   const [platformStatus, setPlatformStatus] = useState<PlatformStatus[]>([]);
   const [imageQuality, setImageQuality] = useState('low');
+  // Board (day by day) or the month calendar.
+  const [view, setView] = useState<'board' | 'calendar'>('board');
+
+  // The saved calendar comes from the server, where the posts table is the source of truth.
+  const restoreCalendar = async (opts?: { silent?: boolean }) => {
+    try {
+      const r = await fetch('/api/calendar/latest');
+      const data = r.ok ? await r.json() : null;
+      const c = data?.calendar;
+      if (!c) return;
+      setCalendar({
+        calendarId: c.calendarId,
+        batchStatus: c.batchStatus || 'PENDING_APPROVAL',
+        niche: c.niche || '',
+        audience: c.audience || '',
+        tone: c.tone || '',
+        generatedAt: c.savedAt || new Date().toISOString(),
+        days: Array.isArray(c.days) ? c.days : [],
+      });
+      if (!opts?.silent) {
+        setNotification('Restored your last saved content calendar.');
+        setTimeout(() => setNotification(null), 4000);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -106,24 +134,7 @@ export default function CreatorHomePage() {
       .catch(console.error);
 
     // Restore the last SAVED calendar, so a page reload does not wipe the work.
-    fetch('/api/calendar/latest')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        const c = data?.calendar;
-        if (!c) return;
-        setCalendar({
-          calendarId: c.calendarId,
-          batchStatus: c.batchStatus || 'PENDING_APPROVAL',
-          niche: c.niche || '',
-          audience: c.audience || '',
-          tone: c.tone || '',
-          generatedAt: c.savedAt || new Date().toISOString(),
-          days: Array.isArray(c.days) ? c.days : [],
-        });
-        setNotification('Restored your last saved content calendar.');
-        setTimeout(() => setNotification(null), 4000);
-      })
-      .catch(console.error);
+    restoreCalendar();
   }, []);
 
   // Reflect the OAuth handoff result.
@@ -280,6 +291,58 @@ export default function CreatorHomePage() {
     }
   };
 
+  /**
+   * Add one extra post to a particular day. The server decides the id and the scheduled slot; we
+   * reload the calendar from it afterwards so the day, the board and the calendar all agree.
+   */
+  const handleAddPost = async (args: {
+    dayIndex?: number;
+    date: string;
+    platform: Platform;
+    generateContent: boolean;
+  }): Promise<{ ok: boolean; note: string; post?: PostItem; dayIndex?: number }> => {
+    try {
+      const res = await fetch('/api/calendar/posts/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          calendarId: calendar?.calendarId,
+          dayIndex: args.dayIndex,
+          date: args.date,
+          platform: args.platform,
+          generateContent: args.generateContent,
+          provider: String(llmConfig.provider || '').toLowerCase(),
+          apiKey: llmConfig.apiKey,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, note: data.error || 'could not add the post' };
+
+      await restoreCalendar({ silent: true });
+      const post: PostItem | undefined = data.post;
+      return {
+        ok: true,
+        note: data.note || `Added a ${args.platform} post on ${args.date}.`,
+        post,
+        dayIndex: data.dayIndex,
+      };
+    } catch (e: any) {
+      return { ok: false, note: `could not add the post: ${e.message}` };
+    }
+  };
+
+  const handleDeletePost = async (postId: string): Promise<{ ok: boolean; note: string }> => {
+    try {
+      const res = await fetch(`/api/calendar/posts?postId=${encodeURIComponent(postId)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, note: data.error || 'could not remove the post' };
+      await restoreCalendar({ silent: true });
+      return { ok: true, note: `Removed ${postId}.` };
+    } catch (e: any) {
+      return { ok: false, note: `could not remove the post: ${e.message}` };
+    }
+  };
+
   const handleApproveBatch = async () => {
     if (!calendar) return;
 
@@ -431,13 +494,53 @@ export default function CreatorHomePage() {
               isGenerating={isGenerating}
             />
 
-            {/* 3-Day Batch Review & Approval Board */}
-            {calendar && (
+            {/* Batch review: day-by-day board, or the month calendar */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono text-zinc-500">View:</span>
+              {(
+                [
+                  { id: 'board', label: 'Day board' },
+                  { id: 'calendar', label: 'Calendar' },
+                ] as const
+              ).map((v) => (
+                <button
+                  key={v.id}
+                  onClick={() => setView(v.id)}
+                  className={`px-3 py-1.5 rounded text-[10px] font-mono border ${
+                    view === v.id
+                      ? 'bg-cyan-600 text-black border-cyan-500 font-semibold'
+                      : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:bg-zinc-800'
+                  }`}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+
+            {calendar && view === 'board' && (
               <CalendarReviewBoard
                 calendar={calendar}
                 onUpdatePost={handleUpdatePost}
                 onApproveBatch={handleApproveBatch}
                 onPublishSinglePost={handlePublishSinglePost}
+                publishingId={publishingId}
+                connections={connections}
+                platformStatus={platformStatus}
+                llm={{
+                  provider: String(llmConfig.provider || '').toLowerCase(),
+                  apiKey: llmConfig.apiKey,
+                  imageQuality,
+                }}
+              />
+            )}
+
+            {calendar && view === 'calendar' && (
+              <CalendarMonthView
+                calendar={calendar}
+                onUpdatePost={handleUpdatePost}
+                onPublishSinglePost={handlePublishSinglePost}
+                onAddPost={handleAddPost}
+                onDeletePost={handleDeletePost}
                 publishingId={publishingId}
                 connections={connections}
                 platformStatus={platformStatus}

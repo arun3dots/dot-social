@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { ContentCalendar, PostItem, Platform, SocialConnection } from '@/types';
 import PostEditorModal from '@/components/PostEditorModal';
+import DispatchConfirmDialog from '@/components/DispatchConfirmDialog';
 import {
   Calendar,
   Twitter,
@@ -40,33 +41,10 @@ export default function CalendarReviewBoard({
   connections = [],
   platformStatus = [],
 }: Props) {
-  // What will really happen: is a live account connected for this platform at all?
-  const dispatchReality = (platform: PostItem['platform']) => {
-    const conn = connections.find((c) => c.platform === platform);
-    const st = platformStatus.find((s) => s.platform === platform);
-    if (conn?.connected && !conn.isSandbox) {
-      return { willPost: true, text: `This goes straight to your connected ${platform} account (@${conn.handle}). It cannot be undone from here.` };
-    }
-    if (conn?.connected && conn.isSandbox) {
-      return { willPost: false, text: `The ${platform} account here is a sandbox demo account, not a real one. A dispatch will not reach ${platform}.` };
-    }
-    if (st && !st.configured) {
-      return {
-        willPost: false,
-        text: `No ${platform} account is connected, and ${platform} is not configured yet (set ${st.requiredEnv} in .env). Dispatching will fail with "no ${platform} account connected".`,
-      };
-    }
-    return {
-      willPost: false,
-      text: `No ${platform} account is connected to this workspace yet. Dispatching will fail with "no ${platform} account connected" - connect one in Social Accounts first.`,
-    };
-  };
-
   // Full editor in a modal: text, image (regenerate/upload), hashtags, tags, schedule.
   const [editor, setEditor] = useState<{ post: PostItem; dayIndex: number } | null>(null);
   // Manual dispatch asks first: it posts to a real account immediately.
   const [confirmDispatch, setConfirmDispatch] = useState<PostItem | null>(null);
-  const [keepScheduled, setKeepScheduled] = useState(true);
 
   const getPlatformIcon = (platform: Platform) => {
     switch (platform) {
@@ -268,7 +246,7 @@ export default function CalendarReviewBoard({
                           )}
 
                           <button
-                            onClick={() => { setKeepScheduled(true); setConfirmDispatch(post); }}
+                            onClick={() => setConfirmDispatch(post)}
                             disabled={isPublishingThis}
                             className="py-1.5 px-3 rounded bg-cyan-600 hover:bg-cyan-500 text-black font-semibold font-mono text-xs flex items-center justify-center gap-1 transition-all"
                             title="Post to the real account now (asks for confirmation)"
@@ -288,92 +266,16 @@ export default function CalendarReviewBoard({
       </div>
 
       {confirmDispatch && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-md bg-[#0e121a] border border-zinc-700 rounded-lg shadow-2xl">
-            <div className="px-5 py-3 border-b border-zinc-800">
-              <div className="text-sm font-semibold text-zinc-100 font-mono">
-                Post this to {confirmDispatch.platform} now?
-              </div>
-            </div>
-            <div className="p-5 flex flex-col gap-3 text-[11px] font-mono text-zinc-300">
-              <div>
-                Scheduled for{' '}
-                <span className="text-zinc-100">
-                  {new Date(confirmDispatch.scheduledTime).toLocaleString([], {
-                    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-                  })}
-                </span>
-              </div>
-              <div>
-                {confirmDispatch.mediaUrl ? 'With its image attached.' : 'Text only — no image on this post.'}
-                {Array.isArray(confirmDispatch.taggedUsers) && confirmDispatch.taggedUsers.length > 0
-                  ? ` ${confirmDispatch.taggedUsers.length} tagged mention(s).`
-                  : ''}
-              </div>
-
-              <label className="flex items-start gap-2 mt-1 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={keepScheduled}
-                  onChange={(e) => setKeepScheduled(e.target.checked)}
-                  className="mt-0.5"
-                />
-                <span className="leading-relaxed">
-                  {keepScheduled ? (
-                    <>
-                      keep it scheduled — it will post <span className="text-amber-400">again</span> at{' '}
-                      {new Date(confirmDispatch.scheduledTime).toLocaleString([], {
-                        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-                      })}
-                      <br />
-                      <span className="text-zinc-500">
-                        uncheck to post once now and take it out of the schedule
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      post <span className="text-zinc-100">once</span> now and take it out of the
-                      schedule (nothing will be posted at{' '}
-                      {new Date(confirmDispatch.scheduledTime).toLocaleString([], {
-                        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-                      })}
-                      )
-                      <br />
-                      <span className="text-zinc-500">tick to keep it queued as well</span>
-                    </>
-                  )}
-                </span>
-              </label>
-
-              <div
-                className={`leading-relaxed border-t border-zinc-800 pt-3 ${
-                  dispatchReality(confirmDispatch.platform).willPost ? 'text-zinc-500' : 'text-amber-400'
-                }`}
-              >
-                {dispatchReality(confirmDispatch.platform).text}
-              </div>
-
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  onClick={() => {
-                    const p = confirmDispatch;
-                    setConfirmDispatch(null);
-                    onPublishSinglePost(p, { keepScheduled });
-                  }}
-                  className="px-4 py-2 rounded bg-cyan-600 hover:bg-cyan-500 text-black text-xs font-mono font-semibold"
-                >
-                  Post now
-                </button>
-                <button
-                  onClick={() => setConfirmDispatch(null)}
-                  className="px-4 py-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-mono"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <DispatchConfirmDialog
+          post={confirmDispatch}
+          connections={connections}
+          platformStatus={platformStatus}
+          onCancel={() => setConfirmDispatch(null)}
+          onConfirm={(post, opts) => {
+            setConfirmDispatch(null);
+            onPublishSinglePost(post, opts);
+          }}
+        />
       )}
 
       {editor && (

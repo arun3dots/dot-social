@@ -130,3 +130,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+/**
+ * DELETE ?postId=... - remove a post that has not been published.
+ *
+ * A PUBLISHED row is refused on purpose: deleting it would not remove anything from LinkedIn, and
+ * the row is the only record we have of what went out.
+ */
+export async function DELETE(req: NextRequest) {
+  try {
+    const userId = await currentUserId();
+    if (!userId) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+
+    await initPostgresTables();
+    const postId = new URL(req.url).searchParams.get('postId') || '';
+    if (!postId) return NextResponse.json({ error: 'postId is required' }, { status: 400 });
+
+    const owned = await pool.query('SELECT id, status FROM posts WHERE id = $1 AND user_id = $2', [postId, userId]);
+    if (owned.rows.length === 0) {
+      return NextResponse.json({ error: 'Post not found for this user' }, { status: 404 });
+    }
+    if (owned.rows[0].status === 'PUBLISHED') {
+      return NextResponse.json(
+        {
+          error:
+            'This post is marked PUBLISHED. Deleting the row would not remove it from the platform, so it is kept as the record that it went out.',
+        },
+        { status: 409 }
+      );
+    }
+
+    await pool.query('DELETE FROM posts WHERE id = $1 AND user_id = $2', [postId, userId]);
+    return NextResponse.json({ deleted: true, postId });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
