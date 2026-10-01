@@ -1,0 +1,48 @@
+# ---- secrets: NEVER COMMIT ----
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+!.env.example
+
+# ---- dependencies ----
+/node_modules
+/.pnp
+.pnp.*
+.yarn/install-state.gz
+package-lock.json.bak
+
+# ---- next.js build output ----
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# ---- python (tools/) ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+tools/**/*.tmp
+*.tmp
+
+# ---- logs ----
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---- generated media (images get regenerated; keep the repo light) ----
+/public/generated/
+/tmp-media/
+
+# ---- os / editor ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# NOTE deliberately NOT ignored: .agents/skills  (the project's curated skill set,
+# ~600 KB, loaded by Antigravity from .agents/skills — committing keeps the setup reproducible)

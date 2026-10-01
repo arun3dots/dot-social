@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-10-01T03:59:01.717Z",
+  "entries": [
+    "auth-implementation-patterns",
+    "bullmq-specialist",
+    "cron-doctor",
+    "frontend-design",
+    "llm-app-patterns",
+    "llm-app-security",
+    "llm-gateway",
+    "llm-structured-output",
+    "nextjs-app-router-patterns",
+    "prisma-expert",
+    "react-best-practices",
+    "security-and-hardening",
+    "systematic-debugging",
+    "testing-patterns"
+  ]
+}
