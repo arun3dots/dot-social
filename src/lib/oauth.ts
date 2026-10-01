@@ -35,7 +35,10 @@ export function oauthConfig(platform: string): OAuthConfig | null {
       return {
         authorizeUrl: 'https://www.linkedin.com/oauth/v2/authorization',
         tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
-        scope: 'openid profile w_member_social',
+        // `email` comes from the "Sign In with LinkedIn using OpenID Connect" product and is what
+        // makes the stored handle readable - without it userinfo returns only an opaque `sub`,
+        // so the studio would show a member id instead of the connected account.
+        scope: 'openid profile email w_member_social',
         clientId: (process.env.LINKEDIN_CLIENT_ID || '').trim() || undefined,
         clientSecret: (process.env.LINKEDIN_CLIENT_SECRET || '').trim() || undefined,
         usesPkce: false,
