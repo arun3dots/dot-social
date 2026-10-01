@@ -52,17 +52,36 @@ export default function CreatorHomePage() {
   const [isSubModalOpen, setIsSubModalOpen] = useState(false);
 
   useEffect(() => {
-    // Read session if available from cookie or API
-    if (typeof window !== 'undefined') {
-      fetch('/api/subscriptions')
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.subscription) {
-            setSubscription(data.subscription);
-          }
-        })
-        .catch(console.error);
-    }
+    if (typeof window === 'undefined') return;
+
+    fetch('/api/subscriptions')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.subscription) {
+          setSubscription(data.subscription);
+        }
+      })
+      .catch(console.error);
+
+    // Restore the last SAVED calendar, so a page reload does not wipe the work.
+    fetch('/api/calendar/latest')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const c = data?.calendar;
+        if (!c) return;
+        setCalendar({
+          calendarId: c.calendarId,
+          batchStatus: c.batchStatus || 'PENDING_APPROVAL',
+          niche: c.niche || '',
+          audience: c.audience || '',
+          tone: c.tone || '',
+          generatedAt: c.savedAt || new Date().toISOString(),
+          days: Array.isArray(c.days) ? c.days : [],
+        });
+        setNotification('Restored your last saved content calendar.');
+        setTimeout(() => setNotification(null), 4000);
+      })
+      .catch(console.error);
   }, []);
 
   // Reflect the OAuth callback result: /?connected=LINKEDIN&mode=live|sandbox
