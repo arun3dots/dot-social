@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { ContentCalendar, PostItem, Platform, SocialConnection } from '@/types';
 import PostEditorModal from '@/components/PostEditorModal';
 import DispatchConfirmDialog from '@/components/DispatchConfirmDialog';
+import NewPostDialog from '@/components/NewPostDialog';
 import { ChevronLeft, ChevronRight, Plus, Loader2, Pencil, Send, Trash2, Check, Twitter, Linkedin, Instagram } from 'lucide-react';
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
     date: string;
     platform: Platform;
     generateContent: boolean;
+    content?: string;
   }) => Promise<{ ok: boolean; note: string; post?: PostItem; dayIndex?: number }>;
   onDeletePost?: (postId: string) => Promise<{ ok: boolean; note: string }>;
   publishingId: string | null;
@@ -91,6 +93,9 @@ export default function CalendarMonthView({
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generateOnAdd, setGenerateOnAdd] = useState(true);
+  // Creating a post straight from the calendar: which date the dialog is open for (null = closed).
+  const [newPostDate, setNewPostDate] = useState<string | null>(null);
+  const todayIsoForDialog = iso(new Date());
 
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
@@ -176,6 +181,12 @@ export default function CalendarMonthView({
           >
             Today
           </button>
+          <button
+            onClick={() => setNewPostDate(selected || todayIsoForDialog)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-black text-[10px] font-mono font-semibold"
+          >
+            <Plus size={11} /> New post
+          </button>
         </div>
         <div className="text-[10px] font-mono text-zinc-500">
           {monthPostCount} post(s) this month
@@ -209,12 +220,16 @@ export default function CalendarMonthView({
             const isToday = cell === todayIso;
             const isSelected = cell === selected;
             return (
-              <button
+              <div
                 key={i}
-                disabled={!cell}
+                role={cell ? 'button' : undefined}
+                tabIndex={cell ? 0 : undefined}
                 onClick={() => cell && setSelected(cell)}
-                className={`min-h-[86px] text-left align-top p-2 border-r border-b border-zinc-800 last:border-r-0 ${
-                  cell ? 'hover:bg-zinc-900/70' : 'bg-zinc-950/40 cursor-default'
+                onKeyDown={(e) => {
+                  if (cell && (e.key === 'Enter' || e.key === ' ')) setSelected(cell);
+                }}
+                className={`group relative min-h-[86px] text-left align-top p-2 border-r border-b border-zinc-800 last:border-r-0 ${
+                  cell ? 'hover:bg-zinc-900/70 cursor-pointer' : 'bg-zinc-950/40'
                 } ${isSelected ? 'bg-zinc-900 ring-1 ring-inset ring-cyan-500/50' : ''}`}
               >
                 {cell && (
@@ -227,9 +242,23 @@ export default function CalendarMonthView({
                       >
                         {Number(cell.slice(8, 10))}
                       </span>
-                      {posts.length > 0 && (
-                        <span className="text-[9px] font-mono text-zinc-600">{posts.length}</span>
-                      )}
+                      <span className="flex items-center gap-1">
+                        {posts.length > 0 && (
+                          <span className="text-[9px] font-mono text-zinc-600">{posts.length}</span>
+                        )}
+                        <button
+                          title={`Add a post on ${cell}`}
+                          aria-label={`Add a post on ${cell}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelected(cell);
+                            setNewPostDate(cell);
+                          }}
+                          className="opacity-40 group-hover:opacity-100 focus:opacity-100 p-0.5 rounded bg-cyan-600 hover:bg-cyan-500 text-black transition-opacity"
+                        >
+                          <Plus size={10} />
+                        </button>
+                      </span>
                     </div>
                     <div className="flex flex-col gap-1">
                       {posts.map((p) => (
@@ -246,7 +275,7 @@ export default function CalendarMonthView({
                     </div>
                   </>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -396,6 +425,22 @@ export default function CalendarMonthView({
           </>
         )}
       </div>
+
+      {newPostDate && (
+        <NewPostDialog
+          initialDate={newPostDate}
+          dayIndex={daysByDate.get(newPostDate)?.dayIndex}
+          onAddPost={onAddPost}
+          onClose={() => setNewPostDate(null)}
+          onCreated={(post, dayIndex, message) => {
+            setNewPostDate(null);
+            setSelected(newPostDate);
+            setNote(message);
+            setError(null);
+            setEditor({ post, dayIndex });
+          }}
+        />
+      )}
 
       {confirmDispatch && (
         <DispatchConfirmDialog

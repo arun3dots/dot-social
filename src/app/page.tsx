@@ -300,6 +300,7 @@ export default function CreatorHomePage() {
     date: string;
     platform: Platform;
     generateContent: boolean;
+    content?: string;
   }): Promise<{ ok: boolean; note: string; post?: PostItem; dayIndex?: number }> => {
     try {
       const res = await fetch('/api/calendar/posts/create', {
@@ -311,6 +312,7 @@ export default function CreatorHomePage() {
           date: args.date,
           platform: args.platform,
           generateContent: args.generateContent,
+          content: args.content,
           provider: String(llmConfig.provider || '').toLowerCase(),
           apiKey: llmConfig.apiKey,
         }),
