@@ -298,10 +298,10 @@ export default function CreatorHomePage() {
   const handleAddPost = async (args: {
     dayIndex?: number;
     date: string;
-    platform: Platform;
+    platforms: Platform[];
     generateContent: boolean;
     content?: string;
-  }): Promise<{ ok: boolean; note: string; post?: PostItem; dayIndex?: number }> => {
+  }): Promise<{ ok: boolean; note: string; posts?: PostItem[]; dayIndex?: number }> => {
     try {
       const res = await fetch('/api/calendar/posts/create', {
         method: 'POST',
@@ -310,7 +310,7 @@ export default function CreatorHomePage() {
           calendarId: calendar?.calendarId,
           dayIndex: args.dayIndex,
           date: args.date,
-          platform: args.platform,
+          platforms: args.platforms,
           generateContent: args.generateContent,
           content: args.content,
           provider: String(llmConfig.provider || '').toLowerCase(),
@@ -321,11 +321,11 @@ export default function CreatorHomePage() {
       if (!res.ok) return { ok: false, note: data.error || 'could not add the post' };
 
       await restoreCalendar({ silent: true });
-      const post: PostItem | undefined = data.post;
+      const posts: PostItem[] = Array.isArray(data.posts) ? data.posts : data.post ? [data.post] : [];
       return {
         ok: true,
-        note: data.note || `Added a ${args.platform} post on ${args.date}.`,
-        post,
+        note: data.note || `Added ${posts.length} post(s) on ${args.date}.`,
+        posts,
         dayIndex: data.dayIndex,
       };
     } catch (e: any) {

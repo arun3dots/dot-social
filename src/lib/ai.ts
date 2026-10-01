@@ -103,6 +103,71 @@ ${args.content}
 Return ONLY the rewritten post text.`;
 }
 
+/**
+ * One post For ONE platform, as structured JSON.
+ *
+ * Written for a multi-platform campaign: the same idea goes out on several platforms at once, so the
+ * model is told which other platforms are getting it and must write the version that ONLY works here
+ * (a 280-character hook is not a LinkedIn argument, and neither is an Instagram caption).
+ */
+export function postPrompt(args: {
+  platform: string;
+  niche?: string;
+  audience?: string;
+  tone?: string;
+  theme?: string;
+  /** The other platforms the same idea is going to, so this one is not a copy of them. */
+  siblings?: string[];
+}): string {
+  const spec = specFor(args.platform);
+  const others = (args.siblings || []).filter((s) => s && s.toUpperCase() !== args.platform.toUpperCase());
+  const othersLine = others.length
+    ? `\n- the same idea is ALSO being posted on ${others.map((o) => specFor(o).label).join(' and ')}: write the version that only works on ${spec.label}, do not reuse the same opening line, and do not try to cover what those formats are for`
+    : '';
+
+  return `You are a senior social media strategist writing one post for one platform.
+
+TARGET
+- platform: ${spec.label}
+- max ${spec.maxChars} characters (count them; never exceed)
+- ${spec.hashtags} hashtags${othersLine}
+
+BRAND
+- niche: ${args.niche || 'not specified'}
+- audience: ${args.audience || 'not specified'}
+- tone: ${args.tone || spec.tone}
+- structure: ${spec.structure}
+${args.theme ? `- angle for the day: ${args.theme}` : ''}
+
+ALSO RETURN an image prompt for this post: one or two sentences describing a single image that suits
+this platform's audience and aspect ratio (${spec.imageSize[0]}x${spec.imageSize[1]}), photographic or
+clean-illustration style, absolutely no text or lettering in the image.
+
+Return STRICT JSON only, no markdown fence, no commentary:
+{"content": "<the post>", "imagePrompt": "<the image description>"}`;
+}
+
+/** Tolerant reader for the JSON above: models sometimes fence it or add a sentence around it. */
+export function parsePostJson(text: string): { content: string; imagePrompt: string | null } {
+  const cleaned = String(text || '')
+    .replace(/^\s*```(?:json)?/i, '')
+    .replace(/```\s*$/, '')
+    .trim();
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start !== -1 && end > start) {
+    try {
+      const parsed = JSON.parse(cleaned.slice(start, end + 1));
+      const content = typeof parsed.content === 'string' ? parsed.content.trim() : '';
+      const imagePrompt = typeof parsed.imagePrompt === 'string' ? parsed.imagePrompt.trim() : '';
+      if (content) return { content, imagePrompt: imagePrompt || null };
+    } catch {
+      // fall through: treat the raw text as the post rather than inventing structure
+    }
+  }
+  return { content: cleaned, imagePrompt: null };
+}
+
 export function hashtagPrompt(args: { platform: string; content: string; niche?: string }): string {
   const spec = specFor(args.platform);
   return `Suggest relevant, specific hashtags for this ${spec.label} post.

@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pool, { initPostgresTables } from '@/lib/postgres';
 import { currentUserId } from '@/lib/session';
-import { complete, resolveKey } from '@/lib/ai';
+import { complete, resolveKey, postPrompt, parsePostJson } from '@/lib/ai';
 import { specFor } from '@/lib/platformSpecs';
 
 /**
- * Add ONE extra post to a particular day of a calendar.
+ * Add post(s) to a particular day of a calendar - one per selected platform.
  *
- * The id is minted the same way generation mints them (post_<calendarId>_<dayIndex>_<platform>),
- * with a suffix when that day already has a post on the platform, so the studio, the editor and the
- * scheduler all address the row by an id the server actually stored.
+ * Each platform gets its own generation call and its own copy: a 280-character X hook is not the same
+ * writing as a LinkedIn argument, so the model is told which other platforms are getting the idea and
+ * must write the version that only works on this one. It also returns an image prompt per platform,
+ * stored as media_prompt so the editor's "Regenerate image" has something real to work from.
  *
- * A day that is not part of the batch yet is created in days_json, so an added post always has a
- * real date and shows up in the calendar view.
+ * Ids are minted the way generation mints them (post_<calendarId>_<dayIndex>_<platform>), with an _xN
+ * suffix when that day already has a post on the platform. A day outside the batch becomes a real day
+ * in days_json, so an added post always has a date.
  */
 const SLOTS: Record<string, number> = { TWITTER: 14, LINKEDIN: 15, INSTAGRAM: 18 };
 const PLATFORMS = ['TWITTER', 'LINKEDIN', 'INSTAGRAM'];
@@ -25,9 +27,18 @@ export async function POST(req: NextRequest) {
     await initPostgresTables();
     const body = await req.json().catch(() => ({}));
 
-    const platform = String(body.platform || '').toUpperCase();
-    if (!PLATFORMS.includes(platform)) {
-      return NextResponse.json({ error: `platform must be one of ${PLATFORMS.join(', ')}` }, { status: 400 });
+    // One platform or several, in the order given, de-duplicated.
+    const requested: any[] = Array.isArray(body.platforms) ? body.platforms : body.platform ? [body.platform] : [];
+    const platforms: string[] = [];
+    for (const raw of requested) {
+      const p = String(raw || '').toUpperCase();
+      if (!PLATFORMS.includes(p)) {
+        return NextResponse.json({ error: `platform must be one of ${PLATFORMS.join(', ')} (got "${raw}")` }, { status: 400 });
+      }
+      if (!platforms.includes(p)) platforms.push(p);
+    }
+    if (platforms.length === 0) {
+      return NextResponse.json({ error: 'Pick at least one platform.' }, { status: 400 });
     }
 
     const cal = body.calendarId
@@ -73,68 +84,101 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'A date is required as YYYY-MM-DD when the day has none yet.' }, { status: 400 });
     }
 
-    // Scheduled time: explicit, else the platform's slot on that date.
-    let scheduledTime = body.scheduledTime ? String(body.scheduledTime) : '';
-    if (scheduledTime && !Number.isFinite(Date.parse(scheduledTime))) {
+    // An explicit time applies to every post; otherwise each platform keeps its own slot.
+    const explicitTime = body.scheduledTime ? String(body.scheduledTime) : '';
+    if (explicitTime && !Number.isFinite(Date.parse(explicitTime))) {
       return NextResponse.json({ error: 'scheduledTime is not a date' }, { status: 400 });
     }
-    const slotHour = SLOTS[platform] ?? 14;
-    if (!scheduledTime) {
-      scheduledTime = new Date(`${dateStr}T${String(slotHour).padStart(2, '0')}:00:00Z`).toISOString();
-    }
 
-    // Copy: explicit, or generated for this platform.
-    let content = typeof body.content === 'string' ? body.content : '';
-    let generated = false;
-    let generationNote: string | null = null;
-    if (!content && body.generateContent !== false) {
-      const resolved = resolveKey(String(body.provider || '').toLowerCase(), body.apiKey);
-      if (!resolved) {
-        generationNote = 'no model key available (no BYOK key sent and the server has none)';
-      } else {
-        const spec = specFor(platform);
-        const theme = String(body.theme || day?.theme || '');
-        const prompt =
-          `Write ONE social media post for ${platform}.\n` +
-          `Brand niche: ${calendar.niche || 'unspecified'}\n` +
-          `Audience: ${calendar.audience || 'unspecified'}\n` +
-          `Tone: ${calendar.tone || 'professional'}\n` +
-          (theme ? `Angle for the day: ${theme}\n` : '') +
-          `Rules: at most ${spec.maxChars} characters, ${spec.hashtags} hashtags at the end, ` +
-          `voice: ${spec.tone}. Structure: ${spec.structure}. ` +
-          `no emoji spam, no markdown, no surrounding quotes. Return only the post text.`;
-        const out = await complete(resolved.provider, resolved.key, prompt, 700);
-        if (out.ok) {
-          content = out.text.trim().slice(0, spec.maxChars);
-          generated = true;
+    // Copy written by the user is used verbatim on every selected platform; nothing is invented over it.
+    const explicitContent = typeof body.content === 'string' && body.content.trim() ? String(body.content) : '';
+    const wantsGeneration = body.generateContent !== false;
+    const resolved = wantsGeneration && !explicitContent ? resolveKey(String(body.provider || '').toLowerCase(), body.apiKey) : null;
+    const theme = String(body.theme || day?.theme || '');
+
+    const createdPosts: any[] = [];
+    const results: any[] = [];
+
+    for (const platform of platforms) {
+      const spec = specFor(platform);
+      const slotHour = SLOTS[platform] ?? 14;
+      const scheduledTime = explicitTime || new Date(`${dateStr}T${String(slotHour).padStart(2, '0')}:00:00Z`).toISOString();
+
+      let content = explicitContent;
+      let imagePrompt: string | null = null;
+      let generated = false;
+      let note = '';
+
+      if (!content && wantsGeneration) {
+        if (!resolved) {
+          note = 'no model key available (no BYOK key sent and the server has none) - created blank';
         } else {
-          generationNote = out.reason;
+          const prompt = postPrompt({
+            platform,
+            niche: calendar.niche,
+            audience: calendar.audience,
+            tone: calendar.tone,
+            theme,
+            siblings: platforms,
+          });
+          const out = await complete(resolved.provider, resolved.key, prompt, 1200);
+          if (out.ok) {
+            const parsed = parsePostJson(out.text);
+            content = (parsed.content || '').trim().slice(0, spec.maxChars);
+            imagePrompt = parsed.imagePrompt;
+            generated = !!content;
+            if (!generated) note = 'the model returned no copy - created blank';
+          } else {
+            note = `${out.reason} - created blank`;
+          }
         }
+      } else if (explicitContent) {
+        note = platforms.length > 1 ? 'your copy, used as-is on every selected platform' : 'your copy';
+      } else {
+        note = 'created blank - write it in the editor';
       }
-    }
 
-    // Mint an id generation would recognise, uniquified against what is already stored.
-    const baseId = `post_${calendar.id}_${dayIndex}_${platform.toLowerCase()}`;
-    let id = baseId;
-    let n = 1;
-    while ((await pool.query('SELECT 1 FROM posts WHERE id = $1', [id])).rows.length > 0) {
-      n += 1;
-      id = `${baseId}_x${n}`;
-      if (n > 50) return NextResponse.json({ error: 'could not mint a unique post id' }, { status: 500 });
-    }
+      // Mint an id generation would recognise, uniquified against what is already stored.
+      const baseId = `post_${calendar.id}_${dayIndex}_${platform.toLowerCase()}`;
+      let id = baseId;
+      let n = 1;
+      while ((await pool.query('SELECT 1 FROM posts WHERE id = $1', [id])).rows.length > 0) {
+        n += 1;
+        id = `${baseId}_x${n}`;
+        if (n > 50) return NextResponse.json({ error: 'could not mint a unique post id' }, { status: 500 });
+      }
 
-    await pool.query(
-      `INSERT INTO posts (id, calendar_id, user_id, day_index, platform, content, media_url, scheduled_time, status, tagged_users)
-       VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 'PENDING_APPROVAL', '[]'::jsonb)`,
-      [id, calendar.id, userId, dayIndex, platform, content || null, scheduledTime]
-    );
+      await pool.query(
+        `INSERT INTO posts (id, calendar_id, user_id, day_index, platform, content, media_prompt, media_url, scheduled_time, status, tagged_users)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8, 'PENDING_APPROVAL', '[]'::jsonb)`,
+        [id, calendar.id, userId, dayIndex, platform, content || null, imagePrompt, scheduledTime]
+      );
+
+      const post = {
+        id,
+        platform,
+        content,
+        mediaPrompt: imagePrompt,
+        mediaUrl: null,
+        scheduledTime,
+        status: 'PENDING_APPROVAL',
+        taggedUsers: [],
+      };
+      createdPosts.push(post);
+      results.push({
+        platform,
+        id,
+        generated,
+        chars: content.length,
+        imagePrompt: !!imagePrompt,
+        slot: `${String(slotHour).padStart(2, '0')}:00 UTC`,
+        note: note || `generated ${content.length} characters`,
+      });
+    }
 
     // A day outside the batch becomes a real day, so it has a date and shows in the calendar.
     if (!day) {
-      const next = [
-        ...snapshot,
-        { dayIndex, date: dateStr, theme: String(body.theme || ''), posts: [] },
-      ];
+      const next = [...snapshot, { dayIndex, date: dateStr, theme, posts: [] }];
       await pool.query('UPDATE content_calendars SET days_json = $1::jsonb WHERE id = $2 AND user_id = $3', [
         JSON.stringify(next),
         calendar.id,
@@ -142,30 +186,24 @@ export async function POST(req: NextRequest) {
       ]);
     }
 
-    const dueImmediately = Date.parse(scheduledTime) <= Date.now();
+    const dueImmediately = createdPosts.some((p) => Date.parse(p.scheduledTime) <= Date.now());
+    const label = createdPosts.length === 1 ? '1 post' : `${createdPosts.length} posts`;
 
     return NextResponse.json({
-      post: {
-        id,
-        platform,
-        content,
-        mediaPrompt: null,
-        mediaUrl: null,
-        scheduledTime,
-        status: 'PENDING_APPROVAL',
-        taggedUsers: [],
-      },
+      posts: createdPosts,
+      post: createdPosts[0], // single-platform callers keep working
+      results,
       calendarId: calendar.id,
       dayIndex,
       date: dateStr,
-      generated,
-      generationNote,
+      generated: results.some((r) => r.generated),
       dueImmediately,
       note:
-        (generated ? 'Generated and saved' : content ? 'Saved' : 'Saved an empty post - write it in the editor') +
-        `: ${platform} on ${dateStr} at ${String(slotHour).padStart(2, '0')}:00 UTC.` +
-        (dueImmediately ? ' That time has already passed, so it counts as due right now.' : '') +
-        (generationNote ? ` (no copy generated: ${generationNote})` : ''),
+        `Created ${label} on ${dateStr}: ` +
+        results.map((r) => `${r.platform} ${r.chars} chars at ${r.slot} (${r.note})`).join('; ') +
+        '.' +
+        (dueImmediately ? ' That time has already passed, so the scheduler treats it as due.' : '') +
+        (results.some((r) => !r.generated && r.chars === 0) ? ' Blank posts are yours to write in the editor.' : ''),
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

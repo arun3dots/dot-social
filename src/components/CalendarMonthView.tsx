@@ -14,10 +14,10 @@ interface Props {
   onAddPost: (args: {
     dayIndex?: number;
     date: string;
-    platform: Platform;
+    platforms: Platform[];
     generateContent: boolean;
     content?: string;
-  }) => Promise<{ ok: boolean; note: string; post?: PostItem; dayIndex?: number }>;
+  }) => Promise<{ ok: boolean; note: string; posts?: PostItem[]; dayIndex?: number }>;
   onDeletePost?: (postId: string) => Promise<{ ok: boolean; note: string }>;
   publishingId: string | null;
   llm?: { provider?: string; apiKey?: string; imageApiKey?: string; imageQuality?: string };
@@ -126,12 +126,12 @@ export default function CalendarMonthView({
       const res = await onAddPost({
         dayIndex: selectedDay?.dayIndex,
         date: selected,
-        platform,
+        platforms: [platform],
         generateContent: generateOnAdd,
       });
       setNote(res.note);
-      if (res.ok && res.post) {
-        setEditor({ post: res.post, dayIndex: res.dayIndex ?? selectedDay?.dayIndex ?? 1 });
+      if (res.ok && res.posts && res.posts.length) {
+        setEditor({ post: res.posts[0], dayIndex: res.dayIndex ?? selectedDay?.dayIndex ?? 1 });
       }
       if (!res.ok) setError(res.note);
     } finally {
@@ -432,12 +432,14 @@ export default function CalendarMonthView({
           dayIndex={daysByDate.get(newPostDate)?.dayIndex}
           onAddPost={onAddPost}
           onClose={() => setNewPostDate(null)}
-          onCreated={(post, dayIndex, message) => {
+          onCreated={(posts, dayIndex, message) => {
             setNewPostDate(null);
             setSelected(newPostDate);
             setNote(message);
             setError(null);
-            setEditor({ post, dayIndex });
+            // Several platforms were created: open the editor on the first one, the rest are listed
+            // in the message above and are on the day already.
+            if (posts[0]) setEditor({ post: posts[0], dayIndex });
           }}
         />
       )}
