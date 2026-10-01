@@ -8,6 +8,8 @@ import PlatformPreview from '@/components/PlatformPreview';
 interface Props {
   post: PostItem;
   dayIndex: number;
+  /** The other posts on this day, so the platform previews can show each platform's own image. */
+  siblings?: PostItem[];
   llm?: { provider?: string; apiKey?: string; imageApiKey?: string; imageQuality?: string };
   /** Persists the given fields through the parent (server-truth; the parent re-reads the response). */
   onSave: (dayIndex: number, postId: string, fields: Partial<PostItem>) => void;
@@ -29,7 +31,7 @@ const QUALITY_COST: Record<string, string> = {
  * and stored, uploads are stored, and every result line reports what the server actually did.
  * Image regeneration uses the same generator as a batch, so platform sizes cannot drift.
  */
-export default function PostEditorModal({ post, dayIndex, llm, onSave, onClose }: Props) {
+export default function PostEditorModal({ post, dayIndex, siblings = [], llm, onSave, onClose }: Props) {
   const spec = specFor(post.platform);
 
   const [content, setContent] = useState(post.content || '');
@@ -405,7 +407,12 @@ export default function PostEditorModal({ post, dayIndex, llm, onSave, onClose }
             <div className="text-xs font-mono text-zinc-300 mb-1">
               Preview <span className="text-zinc-500">(updates as you type — same copy, each platform&apos;s own frame, image ratio and truncation)</span>
             </div>
-            <PlatformPreview content={content} mediaUrl={mediaUrl} ownPlatform={post.platform} />
+            <PlatformPreview
+              content={content}
+              mediaUrl={mediaUrl}
+              ownPlatform={post.platform}
+              siblings={siblings.filter((x) => x.id !== post.id)}
+            />
           </div>
 
           {note && <div className="text-[11px] font-mono text-emerald-400 leading-relaxed">{note}</div>}

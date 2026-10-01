@@ -92,6 +92,12 @@ export default function CalendarReviewBoard({
     }
   };
 
+  /** Every post on a day, so the per-platform previews can show each platform's own image. */
+  const siblingsForDay = (dayIndex: number): PostItem[] => {
+    const day = (calendar.days || []).find((d) => Number(d.dayIndex) === Number(dayIndex));
+    return day ? day.posts || [] : [];
+  };
+
   const isAllApproved = calendar.days.every((d) =>
     d.posts.every((p) => p.status === 'APPROVED' || p.status === 'SCHEDULED' || p.status === 'PUBLISHED')
   );
@@ -282,6 +288,7 @@ export default function CalendarReviewBoard({
         <PostEditorModal
           post={editor.post}
           dayIndex={editor.dayIndex}
+          siblings={siblingsForDay(editor.dayIndex)}
           llm={llm}
           onSave={onUpdatePost}
           onClose={() => setEditor(null)}

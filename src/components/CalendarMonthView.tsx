@@ -58,6 +58,12 @@ export default function CalendarMonthView({
   connections = [],
   platformStatus = [],
 }: Props) {
+  /** Every post on a day, as the calendar currently holds them (used for the per-platform previews). */
+  const postsForDay = (dayIndex: number): PostItem[] => {
+    const day = (calendar.days || []).find((d) => Number(d.dayIndex) === Number(dayIndex));
+    return day ? day.posts || [] : [];
+  };
+
   // date -> { dayIndex, theme, posts }
   const daysByDate = useMemo(() => {
     const map = new Map<string, { dayIndex: number; theme: string; posts: PostItem[] }>();
@@ -461,6 +467,7 @@ export default function CalendarMonthView({
         <PostEditorModal
           post={editor.post}
           dayIndex={editor.dayIndex}
+          siblings={postsForDay(editor.dayIndex)}
           llm={llm}
           onClose={() => setEditor(null)}
           onSave={(dayIndex, postId, fields) => {

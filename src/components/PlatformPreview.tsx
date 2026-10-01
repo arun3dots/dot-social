@@ -5,9 +5,23 @@ import { Platform } from '@/types';
 import { specFor } from '@/lib/platformSpecs';
 import { MessageCircle, Repeat2, Heart, Send, Bookmark, ThumbsUp, Globe, MoreHorizontal, BadgeCheck } from 'lucide-react';
 
+/** Another post on the same day, for the same campaign - one per platform. */
+export interface SiblingPost {
+  platform: Platform;
+  content?: string;
+  mediaUrl?: string | null;
+  status?: string;
+}
+
 interface Props {
   content: string;
   mediaUrl?: string | null;
+  /**
+   * The other posts on this day. Each platform gets its own post, with its own copy and its own image
+   * generated for that platform's frame - so the preview must show THAT post's image when you switch
+   * tabs, never the image of whichever platform happened to be open first.
+   */
+  siblings?: SiblingPost[];
   /** The platform this post actually belongs to (its own tab is marked "this post"). */
   ownPlatform?: Platform;
   /** Author shown in the mock, so the preview is recognisable rather than anonymous. */
@@ -58,6 +72,7 @@ function PlatformIcon({ platform, size = 12 }: { platform: Platform; size?: numb
 export default function PlatformPreview({
   content,
   mediaUrl,
+  siblings = [],
   ownPlatform,
   authorName = 'Sobin JM',
   authorHandle = 'jmsobin',
@@ -66,7 +81,16 @@ export default function PlatformPreview({
 }: Props) {
   const [tab, setTab] = useState<Platform>(initialPlatform || ownPlatform || 'LINKEDIN');
   const spec = specFor(tab);
-  const text = content || '';
+
+  // What the active tab shows: this post while its own platform is up, otherwise that platform's own
+  // post from the same day. Nothing falls back to the first platform's image.
+  const sibling = siblings.find((s) => s.platform === tab && s.platform !== ownPlatform);
+  const showingSibling = !!sibling;
+  const isOwnFrame = !ownPlatform || tab === ownPlatform;
+  const text = String(showingSibling ? sibling.content || '' : content || '');
+  // A tab only ever shows ITS OWN platform's image. No post on that platform means no image here - not
+  // another platform's picture, which is what made every tab look identical.
+  const image_ = showingSibling ? sibling.mediaUrl ?? null : isOwnFrame ? mediaUrl : null;
   const hashtags = (text.match(/#[A-Za-z0-9_]+/g) || []).length;
   const over = text.length > spec.maxChars;
   const ratioClass = RATIO_CLASS[spec.ratio] || 'aspect-square';
@@ -87,13 +111,19 @@ export default function PlatformPreview({
   );
 
   const image = (className: string) =>
-    mediaUrl ? (
+    image_ ? (
       <div className={`w-full overflow-hidden bg-black ${className}`}>
-        <img src={mediaUrl} alt="" className="w-full h-full object-cover" />
+        <img src={image_} alt="" className="w-full h-full object-cover" />
       </div>
     ) : (
       <div className={`w-full ${className} bg-zinc-900 border border-dashed border-zinc-700 flex items-center justify-center`}>
-        <span className="text-[10px] font-mono text-zinc-600">no image on this post</span>
+        <span className="text-[10px] font-mono text-zinc-600">
+          {showingSibling
+            ? `no image on the ${spec.label} post`
+            : isOwnFrame
+            ? 'no image on this post'
+            : `no ${spec.label} post on this day`}
+        </span>
       </div>
     );
 
@@ -114,6 +144,9 @@ export default function PlatformPreview({
               <PlatformIcon platform={p} size={11} />
               {s.label}
               {ownPlatform === p && <span className="text-[9px] text-cyan-400">this post</span>}
+              {ownPlatform !== p && siblings.some((x) => x.platform === p) && (
+                <span className="text-[9px] text-zinc-500">on this day</span>
+              )}
             </button>
           );
         })}
@@ -228,6 +261,24 @@ export default function PlatformPreview({
             </div>
           </div>
         )}
+
+        <div className="mt-3 text-[10px] font-mono text-zinc-500 leading-relaxed">
+          {showingSibling ? (
+            <>
+              showing the <span className="text-zinc-300">{spec.label}</span> post on this day
+              {sibling.status ? ` (${sibling.status})` : ''} — a separate post with its own copy and its own image,
+              generated for this frame. Your edits below apply to the {ownPlatform ? specFor(ownPlatform).label : 'open'} post.
+            </>
+          ) : (
+            <>
+              showing <span className="text-zinc-300">this post</span>
+              {ownPlatform && ownPlatform !== tab ? ` (it is a ${specFor(ownPlatform).label} post, previewed in the ${spec.label} frame)` : ''}
+              {!siblings.some((s) => s.platform === tab) && ownPlatform !== tab
+                ? ` — there is no ${spec.label} post on this day, so no ${spec.label} image is shown.`
+                : ''}
+            </>
+          )}
+        </div>
 
         {/* the real numbers, not decoration */}
         <div className="mt-3 pt-3 border-t border-zinc-800 flex items-center gap-3 flex-wrap text-[10px] font-mono">
