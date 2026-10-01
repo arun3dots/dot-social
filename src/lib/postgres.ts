@@ -95,6 +95,25 @@ export async function initPostgresTables() {
       );
     `);
 
+    // 6. Posts table (one row per generated post, so approval/scheduling is per post)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS posts (
+        id VARCHAR(64) PRIMARY KEY,
+        calendar_id VARCHAR(64) REFERENCES content_calendars(id) ON DELETE CASCADE,
+        user_id VARCHAR(64) REFERENCES users(id) ON DELETE CASCADE,
+        day_index INT,
+        platform VARCHAR(32) NOT NULL,
+        content TEXT,
+        media_prompt TEXT,
+        media_url TEXT,
+        scheduled_time VARCHAR(64),
+        status VARCHAR(32) DEFAULT 'PENDING_APPROVAL',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_posts_user ON posts(user_id);`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_posts_calendar ON posts(calendar_id);`);
+
     // Seed initial users if table empty
     const countCheck = await client.query('SELECT COUNT(*) FROM users;');
     if (parseInt(countCheck.rows[0].count, 10) === 0) {

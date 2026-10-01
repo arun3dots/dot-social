@@ -133,10 +133,11 @@ async function runNextAuthTests() {
   console.log('\n--- TEST GROUP 3: NEXTAUTH SUPER ADMIN (ACTUAL CREDENTIALS) ---');
   let adminSessionCookie = null;
   try {
+    const adminSecret = process.env.SUPER_ADMIN_SECRET_KEY || '';
     const postBody = new URLSearchParams({
       email: 'admin@antigravity.local',
-      secretKey: 'admin123',
-      isDemo: 'false',
+      secretKey: adminSecret,
+      isDemo: adminSecret ? 'false' : 'true',
       csrfToken: csrfToken || '',
       json: 'true',
     }).toString();
