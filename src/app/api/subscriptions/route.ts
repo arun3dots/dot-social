@@ -6,9 +6,13 @@ import { currentUserId } from '@/lib/session';
 
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    // Session wins; never let a caller pick another tenant's data by query param.
-    const userId = (await currentUserId()) || searchParams.get('userId') || 'usr_creator_01';
+    // The signed session is the only source of identity. There is deliberately no query-param or
+    // hardcoded fallback: that pattern is how a caller could read another tenant's plan, and how
+    // the seeded demo user's data leaked into real responses.
+    const userId = await currentUserId();
+    if (!userId) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
 
     const sub = await getDbSubscription(userId);
     return NextResponse.json({
@@ -24,7 +28,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { tier } = body;
-    const userId = (await currentUserId()) || body.userId || 'usr_creator_01';
+    const userId = await currentUserId();
+    if (!userId) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
 
     if (!tier || !PLAN_TIERS[tier as PlanTier]) {
       return NextResponse.json({ error: 'Invalid plan tier' }, { status: 400 });

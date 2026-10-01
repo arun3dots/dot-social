@@ -280,7 +280,7 @@ export async function appendDbAuditLog(log: {
   `,
     [
       `log_${Date.now()}_${Math.random().toString(36).substring(7)}`,
-      log.userId || 'usr_creator_01',
+      log.userId || null,   // never attribute an audit row to the seeded demo user
       log.platform,
       log.postId || null,
       log.status,
