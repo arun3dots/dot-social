@@ -46,3 +46,4 @@ Thumbs.db
 
 # NOTE deliberately NOT ignored: .agents/skills  (the project's curated skill set,
 # ~600 KB, loaded by Antigravity from .agents/skills — committing keeps the setup reproducible)
+/media/

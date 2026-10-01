@@ -38,12 +38,23 @@ export async function POST(req: NextRequest) {
     const userIdForProfile = await currentUserId();
     let profileCadence: string | null = null;
     let profileNiche: string | null = null;
+    let profilePillars: string[] = [];
+    let profileGoals: string[] = [];
+    let profileScreenName = '';
+    let profilePersona = '';
     if (userIdForProfile) {
       try {
         await initPostgresTables();
-        const pr = await pool.query('SELECT cadence, niches FROM users WHERE id = $1', [userIdForProfile]);
+        const pr = await pool.query(
+          'SELECT cadence, niches, pillars, goals, screen_name, persona FROM users WHERE id = $1',
+          [userIdForProfile]
+        );
         profileCadence = pr.rows[0]?.cadence ?? null;
         profileNiche = (pr.rows[0]?.niches || [])[0] ?? null;
+        profilePillars = pr.rows[0]?.pillars || [];
+        profileGoals = pr.rows[0]?.goals || [];
+        profileScreenName = pr.rows[0]?.screen_name || '';
+        profilePersona = pr.rows[0]?.persona || '';
       } catch (e) {
         profileCadence = null;
       }
@@ -52,6 +63,23 @@ export async function POST(req: NextRequest) {
     const requestedDays = body.days != null ? parseInt(String(body.days), 10) : daysForCadence(profileCadence);
     const horizonDays = clampHorizon(requestedDays);
     const effectiveNiche = niche || profileNiche || 'AI SaaS & Automation';
+
+    // ---- image model: BYOK first, then the server's key ----
+    // DeepSeek has no image endpoint, so content and image providers are resolved separately.
+    let imageApiKey = String(body.imageApiKey || '').trim();
+    let imageProvider = String(body.imageProvider || '').trim().toLowerCase();
+    if (!imageApiKey && process.env.OPENAI_API_KEY) {
+      imageApiKey = process.env.OPENAI_API_KEY.trim();
+      imageProvider = 'openai';
+    }
+    if (!imageApiKey) imageProvider = '';
+
+    const imageQuality = String(body.imageQuality || 'low');
+    const requestedMaxImages = parseInt(String(body.maxImages ?? '6'), 10);
+    const maxImages = Number.isFinite(requestedMaxImages) ? Math.max(0, Math.min(requestedMaxImages, 12)) : 6;
+
+    // Server-assigned unique id: generation must never collide with an existing calendar.
+    const genId = `cal_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
     const rootDir = process.cwd();
     const scriptPath = path.join(rootDir, 'tools', 'generate_calendar.py');
@@ -64,6 +92,16 @@ export async function POST(req: NextRequest) {
       '--tone', tone,
       '--provider', providerUsed,
       '--apiKey', apiKey,
+      '--days', String(horizonDays),
+      '--pillars', profilePillars.join('|'),
+      '--goals', profileGoals.join('|'),
+      '--screenName', profileScreenName,
+      '--persona', profilePersona,
+      '--imageProvider', imageProvider,
+      '--imageApiKey', imageApiKey,
+      '--imageQuality', imageQuality,
+      '--maxImages', String(maxImages),
+      '--calendarId', genId,
       '--output', outputPath,
     ];
 
@@ -95,7 +133,8 @@ export async function POST(req: NextRequest) {
     }
 
     await initPostgresTables();
-    const calendarId = calendar.calendarId || `cal_${Date.now()}`;
+    const calendarId = genId;
+    calendar.generatorLabel = calendar.calendarId;
     calendar.calendarId = calendarId;
 
     const days: any[] = Array.isArray(calendar.days) ? calendar.days : [];
@@ -154,6 +193,8 @@ export async function POST(req: NextRequest) {
       userId,
       horizonDays,
       providerUsed,
+      imageProvider: imageProvider || null,
+      imageSummary: calendar.imageSummary || null,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
