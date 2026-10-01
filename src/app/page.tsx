@@ -94,13 +94,25 @@ export default function CreatorHomePage() {
       .catch(console.error);
   }, []);
 
-  // Reflect the OAuth callback result: /?connected=LINKEDIN&mode=live|sandbox
+  // Reflect the OAuth handoff result.
+  //   success: /?connected=LINKEDIN&mode=live&handle=<real handle>
+  //   failure: /?oauth_error=<why>   (missing config, state mismatch, provider refusal)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const qs = new URLSearchParams(window.location.search);
+
+    const oauthError = qs.get('oauth_error');
+    if (oauthError) {
+      setNotification(oauthError);
+      setTimeout(() => setNotification(null), 9000);
+      window.history.replaceState({}, '', window.location.pathname);
+      return;
+    }
+
     const platform = qs.get('connected');
     if (!platform) return;
     const mode = qs.get('mode') || 'live';
+    const handle = qs.get('handle') || `${platform} connected`;
     setConnections((prev) =>
       prev.map((c) =>
         c.platform === platform
@@ -108,7 +120,7 @@ export default function CreatorHomePage() {
               ...c,
               connected: true,
               isSandbox: mode === 'sandbox',
-              handle: mode === 'sandbox' ? `${platform} (sandbox)` : `${platform} connected`,
+              handle: mode === 'sandbox' ? `${platform} (sandbox)` : handle,
             }
           : c
       )
@@ -116,7 +128,7 @@ export default function CreatorHomePage() {
     setNotification(
       mode === 'sandbox'
         ? `${platform} connected in SANDBOX mode — no real credentials configured, this is not a live connection.`
-        : `${platform} connected successfully.`
+        : `${platform} connected as ${handle}.`
     );
     window.history.replaceState({}, '', window.location.pathname);
   }, []);
