@@ -63,6 +63,16 @@ export default function CreatorHomePage() {
       })
       .catch(console.error);
 
+    // First run: send the user through onboarding before the studio is usable.
+    fetch('/api/onboarding')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.profile && d.profile.onboardingCompleted === false) {
+          window.location.href = '/onboarding';
+        }
+      })
+      .catch(console.error);
+
     // Restore the last SAVED calendar, so a page reload does not wipe the work.
     fetch('/api/calendar/latest')
       .then((r) => (r.ok ? r.json() : null))

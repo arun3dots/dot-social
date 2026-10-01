@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import pool, { initPostgresTables } from '@/lib/postgres';
 import { currentUserId } from '@/lib/session';
+import { clampHorizon, daysForCadence } from '@/lib/cadence';
 
 const MAX_HORIZON_DAYS = 7; // hard cap: never generate a month in one stretch
 
@@ -33,9 +34,24 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Cadence guard: clamp any requested horizon to the 7-day maximum.
-    const requestedDays = parseInt(String(body.days ?? 3), 10);
-    const horizonDays = Math.min(Math.max(Number.isFinite(requestedDays) ? requestedDays : 3, 1), MAX_HORIZON_DAYS);
+    // Cadence guard: honour the user's saved cadence, then clamp to the 7-day maximum.
+    const userIdForProfile = await currentUserId();
+    let profileCadence: string | null = null;
+    let profileNiche: string | null = null;
+    if (userIdForProfile) {
+      try {
+        await initPostgresTables();
+        const pr = await pool.query('SELECT cadence, niches FROM users WHERE id = $1', [userIdForProfile]);
+        profileCadence = pr.rows[0]?.cadence ?? null;
+        profileNiche = (pr.rows[0]?.niches || [])[0] ?? null;
+      } catch (e) {
+        profileCadence = null;
+      }
+    }
+
+    const requestedDays = body.days != null ? parseInt(String(body.days), 10) : daysForCadence(profileCadence);
+    const horizonDays = clampHorizon(requestedDays);
+    const effectiveNiche = niche || profileNiche || 'AI SaaS & Automation';
 
     const rootDir = process.cwd();
     const scriptPath = path.join(rootDir, 'tools', 'generate_calendar.py');
@@ -43,7 +59,7 @@ export async function POST(req: NextRequest) {
 
     const pythonArgs = [
       scriptPath,
-      '--niche', niche,
+      '--niche', effectiveNiche,
       '--audience', audience,
       '--tone', tone,
       '--provider', providerUsed,
@@ -93,9 +109,9 @@ export async function POST(req: NextRequest) {
         [
           calendarId,
           userId,
-          `${niche} - ${days.length} day batch`,
+          `${effectiveNiche} - ${days.length} day batch`,
           calendar.batchStatus || 'PENDING_APPROVAL',
-          niche,
+          effectiveNiche,
           audience,
           tone,
           JSON.stringify(days),

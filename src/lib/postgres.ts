@@ -31,6 +31,15 @@ export async function initPostgresTables() {
       );
     `);
 
+    // 1b. Onboarding profile columns (added incrementally so existing DBs upgrade)
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS screen_name VARCHAR(100);`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS persona TEXT;`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS niches TEXT[];`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pillars TEXT[];`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS goals TEXT[];`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cadence VARCHAR(16) DEFAULT 'weekly';`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN DEFAULT FALSE;`);
+
     // 2. Subscriptions table
     await client.query(`
       CREATE TABLE IF NOT EXISTS subscriptions (
