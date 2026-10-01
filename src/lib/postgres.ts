@@ -133,6 +133,9 @@ export async function initPostgresTables() {
     // from the scheduled publish (published_at / external_url).
     await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS manual_published_at TIMESTAMPTZ;`);
     await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS manual_external_url TEXT;`);
+    // The user's own INPUT image(s) for this post's image (JSON array of /api/media/... urls). When present
+    // the image model generates the postable image FROM these instead of from a text prompt alone.
+    await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS reference_urls JSONB DEFAULT '[]'::jsonb;`);
 
     await client.query(`CREATE INDEX IF NOT EXISTS idx_posts_user ON posts(user_id);`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_posts_calendar ON posts(calendar_id);`);

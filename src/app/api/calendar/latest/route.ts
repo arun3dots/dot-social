@@ -46,6 +46,7 @@ export async function GET() {
         platform: row.platform,
         content: row.content,
         mediaPrompt: row.media_prompt,
+        referenceUrls: Array.isArray(row.reference_urls) ? row.reference_urls : [],
         mediaUrl: row.media_url,
         scheduledTime: row.scheduled_time,
         status: row.status,

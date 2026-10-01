@@ -59,8 +59,15 @@ function EditorBody({ post, dayIndex, siblings = [], llm, onSave, onClose, heade
   const [quality, setQuality] = useState(llm?.imageQuality || 'low');
   // The prompt is treated as a brief by the server: it is fine-tuned before the image model sees it.
   const [imagePrompt, setImagePrompt] = useState(post.mediaPrompt || '');
+  // Three ways to get the image. 'generate' = the model decides from the copy; 'reference' = the model
+  // generates FROM the user's own input image(s); 'upload' = the user already has the finished picture.
+  const [imageMode, setImageMode] = useState<'generate' | 'reference' | 'upload'>(
+    post.referenceUrls?.length ? 'reference' : 'generate'
+  );
+  const [referenceUrls, setReferenceUrls] = useState<string[]>(post.referenceUrls || []);
   const [lastPromptUsed, setLastPromptUsed] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const refFileRef = useRef<HTMLInputElement | null>(null);
 
   const overLimit = content.length > spec.maxChars;
 
@@ -130,11 +137,12 @@ function EditorBody({ post, dayIndex, siblings = [], llm, onSave, onClose, heade
   };
 
   // ---- image ----
-  const regenerateImage = () =>
+  const regenerateImage = (mode: 'generate' | 'reference' = 'generate') =>
     run('image', async () => {
       const d = await postJson('/api/calendar/posts/regenerate', {
         postId: post.id,
         target: 'image',
+        mode,
         imageApiKey: llm?.imageApiKey,
         imageQuality: quality,
         imagePrompt: imagePrompt.trim() || undefined,
@@ -146,12 +154,40 @@ function EditorBody({ post, dayIndex, siblings = [], llm, onSave, onClose, heade
       }
       onSave(dayIndex, post.id, { mediaUrl: d.mediaUrl });
       setNote(
-        `Image regenerated at ${d.width}×${d.height}${d.size ? ` (${d.size})` : ''} (${(d.bytes / 1048576).toFixed(2)} MB, quality ${d.quality}` +
+        `Image ${d.imageMode === 'reference' ? `generated from your ${d.references} input image(s)` : 'generated'} at ${d.width}×${d.height}${d.size ? ` (${d.size})` : ''} (${(d.bytes / 1048576).toFixed(2)} MB, quality ${d.quality}` +
           `${d.mode === 'resize' ? ', the shape already matched so it is a straight resize' : d.mode ? `, fitted whole into the frame (${d.content} shown, ${d.bandPx}px blurred edge) - nothing cropped` : ', NOT resized'}` +
           `) and saved to the post.` +
           (d.promptRefined ? ' Your brief was fine-tuned into the prompt below.' : '') +
           (d.note ? ` ${d.note}.` : '')
       );
+    });
+
+  /** Mode 3a: store the user's input image(s) with the post - the model generates from them later. */
+  const uploadReferences = (files: FileList) =>
+    run('upload', async () => {
+      const form = new FormData();
+      form.append('postId', post.id);
+      Array.from(files).forEach((f) => form.append('file', f));
+      const res = await fetch('/api/calendar/posts/reference', { method: 'POST', body: form });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || `upload failed (HTTP ${res.status})`);
+      setReferenceUrls(d.referenceUrls || []);
+      onSave(dayIndex, post.id, { referenceUrls: d.referenceUrls || [] } as Partial<PostItem>);
+      setNote(`${d.note} Now press "Generate from my image".`);
+    });
+
+  const removeReference = (url: string) =>
+    run('upload', async () => {
+      const res = await fetch('/api/calendar/posts/reference', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId: post.id, url }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || `could not remove it (HTTP ${res.status})`);
+      setReferenceUrls(d.referenceUrls || []);
+      onSave(dayIndex, post.id, { referenceUrls: d.referenceUrls || [] } as Partial<PostItem>);
+      setNote(d.note || 'Removed.');
     });
 
   const uploadImage = (file: File) =>
@@ -285,50 +321,150 @@ function EditorBody({ post, dayIndex, siblings = [], llm, onSave, onClose, heade
               <div className="text-xs font-mono text-zinc-300">
                 Image <span className="text-zinc-500">({spec.imageSize[0]}×{spec.imageSize[1]} · {spec.ratio} for {spec.label})</span>
               </div>
-              <div className="flex items-center gap-2">
-                <select
-                  value={quality}
-                  onChange={(e) => setQuality(e.target.value)}
-                  className="bg-[#0b0e14] border border-zinc-700 rounded px-2 py-1 text-[10px] font-mono text-zinc-300"
-                >
-                  {['low', 'medium', 'high'].map((q) => (
-                    <option key={q} value={q}>
-                      {q} {QUALITY_COST[q]}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={regenerateImage}
-                  disabled={busy !== null}
-                  className={`${btn} border-cyan-800/50 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/40`}
-                >
-                  {busy === 'image' ? 'generating…' : 'Regenerate image'}
-                </button>
-                <button
-                  onClick={() => fileRef.current?.click()}
-                  disabled={busy !== null}
-                  className={`${btn} border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800`}
-                >
-                  {busy === 'upload' ? 'uploading…' : 'Upload image'}
-                </button>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/gif"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) uploadImage(f);
-                    e.target.value = '';
-                  }}
-                />
+              <div className="flex items-center gap-2 flex-wrap">
+                {imageMode !== 'upload' && (
+                  <select
+                    value={quality}
+                    onChange={(e) => setQuality(e.target.value)}
+                    className="bg-[#0b0e14] border border-zinc-700 rounded px-2 py-1 text-[10px] font-mono text-zinc-300"
+                  >
+                    {['low', 'medium', 'high'].map((q) => (
+                      <option key={q} value={q}>
+                        {q} {QUALITY_COST[q]}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {imageMode === 'generate' && (
+                  <button
+                    onClick={() => regenerateImage('generate')}
+                    disabled={busy !== null}
+                    className={`${btn} border-cyan-800/50 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/40`}
+                  >
+                    {busy === 'image' ? 'generating…' : 'Generate image'}
+                  </button>
+                )}
+
+                {imageMode === 'reference' && (
+                  <>
+                    <button
+                      onClick={() => refFileRef.current?.click()}
+                      disabled={busy !== null}
+                      className={`${btn} border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800`}
+                    >
+                      {busy === 'upload' ? 'uploading…' : 'Upload input image(s)'}
+                    </button>
+                    <input
+                      ref={refFileRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files;
+                        if (f && f.length) uploadReferences(f);
+                        e.target.value = '';
+                      }}
+                    />
+                    <button
+                      onClick={() => regenerateImage('reference')}
+                      disabled={busy !== null || referenceUrls.length === 0}
+                      title={referenceUrls.length ? 'The model generates the postable image from your input image(s)' : 'Upload an input image first'}
+                      className={`${btn} border-cyan-800/50 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/40 disabled:opacity-40`}
+                    >
+                      {busy === 'image' ? 'generating…' : 'Generate from my image'}
+                    </button>
+                  </>
+                )}
+
+                {imageMode === 'upload' && (
+                  <>
+                    <button
+                      onClick={() => fileRef.current?.click()}
+                      disabled={busy !== null}
+                      className={`${btn} border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800`}
+                    >
+                      {busy === 'upload' ? 'uploading…' : 'Upload the final image'}
+                    </button>
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) uploadImage(f);
+                        e.target.value = '';
+                      }}
+                    />
+                  </>
+                )}
               </div>
             </div>
+
+            {/* the three ways to get an image on this post */}
+            <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+              {([
+                ['generate', '1 · Model generates it', "The model writes the image prompt from this post's copy and context, then generates."],
+                ['reference', '2 · Generate from my input image', "Upload a photo or reference; the model generates the postable image FROM it, at this platform's size."],
+                ['upload', '3 · I upload the finished image', 'You already have the final picture — it is used as-is, no generation.'],
+              ] as const).map(([m, label, hint]) => (
+                <button
+                  key={m}
+                  onClick={() => setImageMode(m)}
+                  title={hint}
+                  className={`px-2 py-1 rounded border font-mono text-[10px] transition-colors ${
+                    imageMode === m
+                      ? 'bg-cyan-950/40 border-cyan-800/50 text-cyan-300'
+                      : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="text-[10px] font-mono text-zinc-500 mb-2">
+              {imageMode === 'generate' &&
+                (imagePrompt.trim()
+                  ? 'Your prompt is fine-tuned into a production prompt, then the model generates at this platform\'s own frame.'
+                  : 'No prompt? The model reads the post copy and context and writes the image prompt itself.')}
+              {imageMode === 'reference' &&
+                (referenceUrls.length
+                  ? `${referenceUrls.length} input image(s) on this post — the model generates the postable image FROM them at this platform's size, following the input closely (input fidelity: high). Say what must stay in the prompt below; a vague prompt lets the model reinterpret your picture.`
+                  : 'Upload the image(s) the model must work from (PNG, JPG or GIF, up to 6, 8 MB each). With no prompt it keeps your subject, composition and palette and only cleans it up.')}
+              {imageMode === 'upload' && 'The file replaces this post\'s image as-is. Nothing is generated, so nothing is cropped.'}
+            </div>
+
+            {imageMode === 'reference' && referenceUrls.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                {referenceUrls.map((u) => (
+                  <span key={u} className="relative inline-block">
+                    <img
+                      src={u}
+                      alt="your input image"
+                      title="your input image — click the × to remove it"
+                      className="w-16 h-16 object-contain rounded border border-zinc-700 bg-black"
+                    />
+                    <button
+                      onClick={() => removeReference(u)}
+                      disabled={busy !== null}
+                      title="remove this input image"
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-red-300 text-[10px] leading-none"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {imageMode !== 'upload' && (
             <div className="mb-2">
               <div className="text-[10px] font-mono text-zinc-500 mb-1">
-                Image prompt — describe what you want. I fine-tune it (subject, setting, light, style, "no text in
-                the image") and aim it at this platform&apos;s own frame before it reaches the image model. The whole
-                picture is kept — it is never cropped.
+                {imageMode === 'reference'
+                  ? 'How should the model use your input image? Name what must stay ("keep the product and the layout, only replace the background") — it is fine-tuned and aimed at this platform\'s own frame. Leave it empty and it preserves the subject, composition and palette. The whole picture is kept — it is never cropped.'
+                  : 'Image prompt — describe what you want. I fine-tune it (subject, setting, light, style, "no text in the image") and aim it at this platform\'s own frame before it reaches the image model. The whole picture is kept — it is never cropped.'}
               </div>
               <textarea
                 value={imagePrompt}
@@ -340,9 +476,12 @@ function EditorBody({ post, dayIndex, siblings = [], llm, onSave, onClose, heade
               <div className="text-[10px] font-mono text-zinc-600 mt-1">
                 {lastPromptUsed
                   ? `the prompt actually sent: ${lastPromptUsed.slice(0, 140)}${lastPromptUsed.length > 140 ? '…' : ''}`
-                  : 'leave it empty to reuse the prompt stored with this post'}
+                  : imageMode === 'reference'
+                  ? 'leave it empty and I write a transform instruction from the post copy'
+                  : 'leave it empty and the model writes the prompt from this post'}
               </div>
             </div>
+            )}
             {mediaUrl ? (
               <img src={mediaUrl} alt="post visual" className="w-full max-h-72 object-contain bg-black rounded border border-zinc-800" />
             ) : (

@@ -48,6 +48,11 @@ export interface PostItem {
   content: string;
   mediaPrompt?: string | null;
   mediaUrl?: string | null;
+  /**
+   * The user's own input image(s) for this post's image. When present, the image model generates the
+   * postable image FROM them (mode "generate from my input image") rather than from a text prompt alone.
+   */
+  referenceUrls?: string[];
   scheduledTime: string;
   status: 'PENDING_APPROVAL' | 'APPROVED' | 'SCHEDULED' | 'PUBLISHED' | 'FAILED';
   externalUrl?: string;

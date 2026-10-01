@@ -12,6 +12,7 @@ import shutil
 import sys
 import json
 import base64
+import uuid
 import argparse
 import urllib.request
 import urllib.error
@@ -138,7 +139,7 @@ def generate_image_openai(api_key, prompt, size, out_path, quality="low", model=
         res = _post_json(
             "https://api.openai.com/v1/images/generations",
             {"model": model, "prompt": prompt, "size": size, "n": 1, "quality": quality},
-            {"Authorization": f"Bearer {api_key}"}, timeout=180)
+            {"Authorization": f"Bearer {api_key}"}, timeout=300)
         item = (res.get("data") or [{}])[0]
         raw = None
         if item.get("b64_json"):
@@ -155,6 +156,106 @@ def generate_image_openai(api_key, prompt, size, out_path, quality="low", model=
         return False, f"HTTP {e.code}: {e.read().decode('utf-8', 'ignore')[:220]}"
     except Exception as e:  # noqa: BLE001
         return False, str(e)[:220]
+
+
+def _post_multipart(url, fields, files, headers, timeout=300):
+    """POST multipart/form-data with the stdlib only - this generator has no requests dependency."""
+    boundary = "----hermes" + uuid.uuid4().hex
+    body = bytearray()
+    for k, v in fields.items():
+        body += f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode("utf-8")
+    for name, fname, raw, ctype in files:
+        body += (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; filename="{fname}"\r\n'
+            f"Content-Type: {ctype}\r\n\r\n"
+        ).encode("utf-8")
+        body += raw + b"\r\n"
+    body += f"--{boundary}--\r\n".encode("utf-8")
+    req = urllib.request.Request(
+        url, data=bytes(body), method="POST",
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}", **headers})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+_CTYPE = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+          "gif": "image/gif", "webp": "image/webp"}
+
+
+def _read_reference(paths, limit):
+    """Only the first `limit` files, as (filename, bytes, content-type). Missing files are reported."""
+    out, missing = [], []
+    for p in paths[:limit]:
+        fp = Path(p)
+        if not fp.exists():
+            missing.append(fp.name)
+            continue
+        out.append((fp.name, fp.read_bytes(), _CTYPE.get(fp.suffix.lower().lstrip("."), "image/png")))
+    return out, missing
+
+
+def generate_image_openai_from_input(api_key, prompt, size, out_path, reference_paths,
+                                     quality="low", model="gpt-image-1"):
+    """Generate the postable image FROM the user's own input image(s).
+
+    Uses the edits endpoint, which takes the input image(s) as source material. If the account/API rejects
+    several inputs at once, it retries with the first one and says so - rather than inventing a result.
+    """
+    files, missing = _read_reference(reference_paths, 6)
+    if not files:
+        return False, f"no readable input image ({', '.join(missing) or 'none supplied'})", None
+    note = f"used {len(files)} input image(s)" + (f"; skipped missing: {', '.join(missing)}" if missing else "")
+    # The user's picture is the subject here, so ask the model to follow it closely rather than reinterpret it.
+    fields = {"model": model, "prompt": prompt, "size": size, "n": "1", "quality": quality,
+              "input_fidelity": "high"}
+    try:
+        res = _post_multipart(
+            "https://api.openai.com/v1/images/edits", fields,
+            [("image[]", f[0], f[1], f[2]) for f in files],
+            {"Authorization": f"Bearer {api_key}"})
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "ignore")[:220]
+        if "input_fidelity" in detail:
+            # Not every account/model accepts it - retry without, and say so rather than failing.
+            fields.pop("input_fidelity", None)
+            note += "; the API did not accept input_fidelity, so it ran without it"
+            try:
+                res = _post_multipart(
+                    "https://api.openai.com/v1/images/edits", fields,
+                    [("image[]", f[0], f[1], f[2]) for f in files],
+                    {"Authorization": f"Bearer {api_key}"})
+            except urllib.error.HTTPError as e3:
+                return False, f"HTTP {e3.code}: {e3.read().decode('utf-8', 'ignore')[:220]}", None
+        elif len(files) > 1:
+            # Some accounts only accept one input image on this endpoint.
+            try:
+                fields.pop("input_fidelity", None)
+                res = _post_multipart(
+                    "https://api.openai.com/v1/images/edits", fields,
+                    [("image[]", files[0][0], files[0][1], files[0][2])],
+                    {"Authorization": f"Bearer {api_key}"})
+                note += "; the API took only the first input image"
+            except urllib.error.HTTPError as e2:
+                return False, f"HTTP {e2.code}: {e2.read().decode('utf-8', 'ignore')[:220]}", None
+        else:
+            return False, f"HTTP {e.code}: {detail}", None
+    except Exception as e:  # noqa: BLE001
+        return False, str(e)[:220], None
+    try:
+        item = (res.get("data") or [{}])[0]
+        raw = None
+        if item.get("b64_json"):
+            raw = base64.b64decode(item["b64_json"])
+        elif item.get("url"):
+            with urllib.request.urlopen(item["url"], timeout=120) as r:
+                raw = r.read()
+        if not raw:
+            return False, "no image payload returned", None
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(raw)
+        return True, f"{len(raw)} bytes", note
+    except Exception as e:  # noqa: BLE001
+        return False, str(e)[:220], None
 
 
 def _edge_extend(img, tw, th):
@@ -370,6 +471,9 @@ def main():
     ap.add_argument("--singleImage", default="")
     ap.add_argument("--singleImagePrompt", default="")
     ap.add_argument("--singleImageOut", default="")
+    # Mode 3: the user's own input image(s). When given, the image model generates the postable image FROM
+    # them (edits endpoint) instead of from a text prompt alone. Repeatable, or comma separated.
+    ap.add_argument("--reference", action="append", default=[])
     # Campaign mode: one image prompt for a post that goes to several platforms at once. The image is
     # generated once and each platform gets its own exact-size derivative (or, with --imagePerPlatform,
     # one generation per platform in that platform's own aspect).
@@ -467,15 +571,30 @@ def main():
             args.imageDir or ".") / f"image_{platform.lower()}.png"
         prompt = args.singleImagePrompt or f"An editorial image for a {spec['label']} post."
         quality = args.imageQuality if args.imageQuality in ("low", "medium", "high") else "low"
-        ok, detail = generate_image_openai(
-            args.imageApiKey, prompt, spec["openai_size"], out,
-            quality=quality, model=os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1"))
+        references = []
+        for chunk in (args.reference or []):
+            references += [c.strip() for c in str(chunk).split(",") if c.strip()]
+        if references:
+            # Mode 3: the user supplied the source image(s) - generate the postable image FROM them.
+            ok, detail, refnote = generate_image_openai_from_input(
+                args.imageApiKey, prompt, spec["openai_size"], out, references,
+                quality=quality, model=os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1"))
+        else:
+            (ok, detail), refnote = (
+                generate_image_openai(
+                    args.imageApiKey, prompt, spec["openai_size"], out,
+                    quality=quality, model=os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")),
+                None,
+            )
         if not ok:
             print(json.dumps({"ok": False, "error": detail}))
             return
         rok, rdetail, rinfo = fit_to_exact(out, spec["image_size"])
         print(json.dumps({
             "ok": True,
+            "source": "reference" if references else "prompt",
+            "references": len(references),
+            "referenceNote": refnote,
             "path": str(out),
             "width": spec["image_size"][0],
             "height": spec["image_size"][1],

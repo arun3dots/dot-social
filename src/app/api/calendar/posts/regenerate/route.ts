@@ -24,6 +24,11 @@ import { specFor } from '@/lib/platformSpecs';
  *
  * Image regeneration runs through the same generator a batch uses (tools/generate_calendar.py
  * --singleImage), so sizes, quality and the resize step cannot drift between the two paths.
+ *
+ * The image has three ways in, and `mode` says which one is being used:
+ *   'generate'  (default) the model decides from the copy and the prompt (text -> image)
+ *   'reference' the model generates FROM the user's own input image(s) stored on the post
+ *   (the third, "I have the final image", does not come through here - it is a direct upload)
  */
 export async function POST(req: NextRequest) {
   try {
@@ -41,7 +46,7 @@ export async function POST(req: NextRequest) {
     await initPostgresTables();
     const q = await pool.query(
       `SELECT p.id, p.calendar_id, p.user_id, p.day_index, p.platform, p.content, p.media_prompt, p.media_url,
-              c.niche, c.audience, c.tone
+              p.reference_urls, c.niche, c.audience, c.tone
          FROM posts p LEFT JOIN content_calendars c ON c.id = p.calendar_id
         WHERE p.id = $1 AND p.user_id = $2`,
       [postId, userId]
@@ -90,7 +95,25 @@ export async function POST(req: NextRequest) {
     }
 
     const spec = specFor(post.platform);
+    const mode = String(body.mode || 'generate').toLowerCase() === 'reference' ? 'reference' : 'generate';
     const dir = path.join(process.cwd(), 'media', 'generated', String(post.calendar_id));
+
+    // The user's input image(s), resolved to files INSIDE this post's own media directory. The stored value
+    // is a URL, so only its basename is used - a stored path can never reach outside the calendar's folder.
+    const referenceUrls: string[] = Array.isArray(post.reference_urls) ? post.reference_urls : [];
+    const referencePaths = referenceUrls
+      .map((u) => path.join(dir, path.basename(String(u))))
+      .filter((abs) => fs.existsSync(abs));
+    if (mode === 'reference' && referencePaths.length === 0) {
+      return NextResponse.json(
+        {
+          error: referenceUrls.length
+            ? 'the input image(s) stored on this post are no longer on disk - upload them again'
+            : 'upload at least one input image first (Image → "Generate from my input image")',
+        },
+        { status: 400 }
+      );
+    }
     fs.mkdirSync(dir, { recursive: true });
     const stamp = Date.now().toString(36);
     const fileName = `${post.calendar_id}_${post.day_index || 1}_${String(post.platform).toLowerCase()}_regen_${stamp}.png`;
@@ -100,8 +123,16 @@ export async function POST(req: NextRequest) {
     // prompt first (composition, light, style, and "no text in the image"), then generated. Without one
     // the stored prompt is reused, and if there is none either, a plain description of the post.
     const userPrompt = String(body.imagePrompt || '').trim();
+    const excerpt = String(post.content || '').replace(/\s+/g, ' ').trim().slice(0, 240);
     let prompt = (post.media_prompt || '').trim() ||
-      `An editorial image for a ${spec.label} post about ${post.niche || 'the brand topic'}. Clean, modern, no text.`;
+      (mode === 'reference'
+        ? `Make a ${spec.label} post image FROM the supplied input image. Keep the subject, the composition and the ` +
+          `colour palette of the supplied image recognisable — clean it up, frame it for ${spec.ratio}, and improve ` +
+          `the lighting so it holds up as a standalone ${spec.ratio} visual; do not replace what the picture shows ` +
+          `with a different scene, and leave the middle uncluttered. ` +
+          (excerpt ? `The post it accompanies says: "${excerpt}". ` : '') +
+          `No text, lettering or logos in the image.`
+        : `An editorial image for a ${spec.label} post about ${post.niche || 'the brand topic'}. Clean, modern, no text.`);
     let refined = false;
     let refineNote: string | null = null;
     if (userPrompt) {
@@ -134,6 +165,8 @@ export async function POST(req: NextRequest) {
       '--singleImageOut', outPath,
       '--imageQuality', imageQuality,
       '--imageApiKey', imageApiKey,
+      // mode 'reference': the model generates FROM these files instead of from text alone
+      ...referencePaths.flatMap((abs) => ['--reference', abs]),
     ]);
     let out = '';
     let err = '';
@@ -161,6 +194,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       target,
+      imageMode: mode,
+      source: parsed.source || null,
+      references: mode === 'reference' ? referencePaths.length : 0,
       mediaUrl,
       width: parsed.width,
       height: parsed.height,
