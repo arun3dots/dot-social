@@ -1,44 +1,78 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  callbackUrl,
+  isConfigured,
+  oauthConfig,
+  pkcePair,
+  randomState,
+  stateCookieName,
+  verifierCookieName,
+} from '@/lib/oauth';
+import { currentUserId } from '@/lib/session';
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { platform: string } }
-) {
+/**
+ * Starts the OAuth handoff for a platform.
+ *
+ * Previously this redirected to "/?connected=LINKEDIN&mode=sandbox" whenever credentials
+ * were missing (nothing was connected), used a hard-coded state, and sent a placeholder
+ * PKCE challenge as "plain". Now: a real random state and a real S256 challenge are
+ * stored in HttpOnly cookies, and missing credentials produce an explicit error.
+ */
+export async function GET(req: NextRequest, { params }: { params: { platform: string } }) {
   const platform = params.platform.toUpperCase();
   const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
 
-  if (platform === 'TWITTER') {
-    const clientId = process.env.TWITTER_CLIENT_ID;
-    if (!clientId) {
-      return NextResponse.redirect(`${baseUrl}/?connected=TWITTER&mode=sandbox`);
-    }
-    const redirectUri = encodeURIComponent(`${baseUrl}/api/social/oauth/twitter/callback`);
-    const state = 'state_tw_sec';
-    const codeChallenge = 'challenge_example';
-    const authUrl = `https://twitter.com/i/oauth2/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=tweet.read%20tweet.write%20users.read%20offline.access&state=${state}&code_challenge=${codeChallenge}&code_challenge_method=plain`;
-    return NextResponse.redirect(authUrl);
+  const userId = await currentUserId();
+  if (!userId) {
+    return NextResponse.redirect(`${baseUrl}/login?error=auth_required`);
   }
 
-  if (platform === 'LINKEDIN') {
-    const clientId = process.env.LINKEDIN_CLIENT_ID;
-    if (!clientId) {
-      return NextResponse.redirect(`${baseUrl}/?connected=LINKEDIN&mode=sandbox`);
-    }
-    const redirectUri = encodeURIComponent(`${baseUrl}/api/social/oauth/linkedin/callback`);
-    const state = 'state_li_sec';
-    const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&state=${state}&scope=openid%20profile%20w_member_social`;
-    return NextResponse.redirect(authUrl);
+  const config = oauthConfig(platform);
+  if (!config) {
+    return NextResponse.redirect(`${baseUrl}/?oauth_error=${encodeURIComponent('unsupported platform ' + platform)}`);
   }
 
-  if (platform === 'INSTAGRAM') {
-    const appId = process.env.INSTAGRAM_APP_ID;
-    if (!appId) {
-      return NextResponse.redirect(`${baseUrl}/?connected=INSTAGRAM&mode=sandbox`);
-    }
-    const redirectUri = encodeURIComponent(`${baseUrl}/api/social/oauth/instagram/callback`);
-    const authUrl = `https://www.facebook.com/v20.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=instagram_basic,instagram_content_publish,pages_show_list&response_type=code`;
-    return NextResponse.redirect(authUrl);
+  if (!isConfigured(platform)) {
+    // No pretending: say exactly which env vars are missing.
+    const missing = platform === 'TWITTER' ? 'TWITTER_CLIENT_ID / TWITTER_CLIENT_SECRET'
+      : platform === 'LINKEDIN' ? 'LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET'
+      : 'INSTAGRAM_APP_ID / INSTAGRAM_APP_SECRET';
+    return NextResponse.redirect(
+      `${baseUrl}/?oauth_error=${encodeURIComponent(`${platform} is not configured yet - set ${missing} in .env`)}`
+    );
   }
 
-  return NextResponse.json({ error: 'Unsupported platform' }, { status: 400 });
+  const state = randomState();
+  const redirectUri = callbackUrl(platform, baseUrl);
+
+  const auth = new URL(config.authorizeUrl);
+  auth.searchParams.set('response_type', 'code');
+  auth.searchParams.set('client_id', config.clientId as string);
+  auth.searchParams.set('redirect_uri', redirectUri);
+  auth.searchParams.set('state', state);
+  auth.searchParams.set('scope', config.scope);
+
+  const res = NextResponse.redirect(auth.toString());
+
+  const cookieOpts = {
+    httpOnly: true as const,
+    sameSite: 'lax' as const,
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: 600,
+  };
+  res.cookies.set(stateCookieName(platform), state, cookieOpts);
+
+  if (config.usesPkce) {
+    const { verifier, challenge } = pkcePair();
+    auth.searchParams.set('code_challenge', challenge);
+    auth.searchParams.set('code_challenge_method', 'S256');
+    res.cookies.set(verifierCookieName(platform), verifier, cookieOpts);
+    // rebuild the redirect now that the challenge is present
+    return NextResponse.redirect(auth.toString(), {
+      headers: { 'Set-Cookie': res.headers.get('Set-Cookie') as string },
+    });
+  }
+
+  return res;
 }
