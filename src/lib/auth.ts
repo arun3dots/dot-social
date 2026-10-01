@@ -10,6 +10,11 @@ if (!nextAuthSecret) {
   );
 }
 
+// Demo logins return a session with NO credential check, so they may only exist
+// outside production (or when explicitly enabled).
+const demoAllowed =
+  process.env.NODE_ENV !== 'production' || process.env.ALLOW_DEMO_LOGIN === 'true';
+
 export const authOptions: NextAuthOptions = {
   secret: nextAuthSecret,
   session: {
@@ -38,6 +43,9 @@ export const authOptions: NextAuthOptions = {
         const secretKey = credentials.secretKey;
 
         if (isDemo) {
+          if (!demoAllowed) {
+            throw new Error('Demo login is disabled in production. Set ALLOW_DEMO_LOGIN=true to enable it.');
+          }
           return {
             id: 'usr_admin_01',
             name: 'Super Admin Master',
@@ -47,9 +55,12 @@ export const authOptions: NextAuthOptions = {
           };
         }
 
+        const adminSecretKey = (process.env.SUPER_ADMIN_SECRET_KEY || '').trim();
         const isCredentialsValid =
+          !!adminSecretKey &&
+          !!email &&
           email === superAdminEmail &&
-          (secretKey === 'admin123' || (process.env.NEXTAUTH_SECRET && secretKey === process.env.NEXTAUTH_SECRET));
+          secretKey === adminSecretKey;
 
         if (!isCredentialsValid) {
           throw new Error('Invalid Super Admin credentials. Access denied.');
@@ -81,6 +92,9 @@ export const authOptions: NextAuthOptions = {
         const email = credentials.email?.trim().toLowerCase();
 
         if (isDemo) {
+          if (!demoAllowed) {
+            throw new Error('Demo login is disabled in production. Set ALLOW_DEMO_LOGIN=true to enable it.');
+          }
           return {
             id: 'usr_creator_demo',
             name: 'Jane Creator',
