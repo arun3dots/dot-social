@@ -5,13 +5,16 @@ import { getToken } from 'next-auth/jwt';
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // 1. Whitelist static files and Next.js internals
+  // 1. Whitelist static files and Next.js internals.
+  // This used to be `pathname.includes('.')`, which exempted ANY path containing a dot from the
+  // session gate - that is the accident that let /api/media through unauthenticated. Match real
+  // static extensions instead.
+  const STATIC_ASSET = /\.(?:ico|png|jpe?g|gif|svg|webp|avif|css|js|mjs|map|txt|json|woff2?|ttf|eot|mp4|webm|mp3)$/i;
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/static') ||
     pathname.startsWith('/mock-assets') ||
-    pathname.startsWith('/favicon.ico') ||
-    pathname.includes('.')
+    STATIC_ASSET.test(pathname)
   ) {
     return NextResponse.next();
   }
@@ -65,7 +68,11 @@ export async function middleware(req: NextRequest) {
   // 5. Protect Creator application routes (/, /api/calendar/*, /api/subscriptions)
   if (!isPublicRoute && !selfAuthenticating) {
     if (!isAuthenticated) {
-      // Unauthenticated -> redirect to creator login
+      // An API client needs a status code it can act on, not a redirect to an HTML login page.
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+      }
+      // Unauthenticated page -> redirect to creator login
       return NextResponse.redirect(new URL('/login?error=auth_required', req.url));
     }
   }

@@ -24,6 +24,49 @@ export async function GET() {
     }
 
     const r = res.rows[0];
+
+    // The posts table is the source of truth for anything that changes after generation
+    // (status, edits, scheduled time, publish results). days_json is only the generation-time
+    // snapshot and goes stale the moment someone approves or edits a post - serving it directly
+    // made an approval look lost after a reload. So overlay every post from its row.
+    const rows = await pool.query(
+      `SELECT id, day_index, platform, content, media_prompt, media_url, scheduled_time, status,
+              external_url, published_at
+         FROM posts WHERE calendar_id = $1
+        ORDER BY day_index ASC, platform ASC`,
+      [r.id]
+    );
+
+    const byDay = new Map<number, any[]>();
+    for (const row of rows.rows) {
+      const day = Number(row.day_index ?? 1);
+      if (!byDay.has(day)) byDay.set(day, []);
+      byDay.get(day)!.push({
+        id: row.id,
+        platform: row.platform,
+        content: row.content,
+        mediaPrompt: row.media_prompt,
+        mediaUrl: row.media_url,
+        scheduledTime: row.scheduled_time,
+        status: row.status,
+        externalUrl: row.external_url || undefined,
+        publishedAt: row.published_at || undefined,
+      });
+    }
+
+    const snapshot: any[] = Array.isArray(r.days_json) ? r.days_json : [];
+    const days: any[] = snapshot.map((d: any) => ({
+      ...d,
+      posts: byDay.get(Number(d.dayIndex)) || d.posts || [],
+    }));
+    // forEach rather than iterating the Map iterator: the project's TS target rejects the latter.
+    byDay.forEach((posts, day) => {
+      if (!days.some((d) => Number(d.dayIndex) === day)) {
+        days.push({ dayIndex: day, date: '', theme: '', posts });
+      }
+    });
+    days.sort((a, b) => Number(a.dayIndex) - Number(b.dayIndex));
+
     const stats = await pool.query(
       `SELECT platform, status, COUNT(*)::int AS count
        FROM posts WHERE calendar_id = $1
@@ -38,12 +81,13 @@ export async function GET() {
         niche: r.niche,
         audience: r.audience,
         tone: r.tone,
-        days: r.days_json,
+        days,
         savedAt: r.created_at,
         title: r.title,
       },
       postStats: stats.rows,
       persisted: true,
+      source: 'posts-table overlay on the generation snapshot',
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
       platform: row.platform,
       content: row.content,
       mediaUrl: row.media_url,
+      explicit: true, // a human pressed Dispatch Now for this specific post
     });
 
     if (body.postId) {
@@ -80,7 +81,17 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       processedCount: 1,
-      results: [{ postId: row.id, platform: row.platform, status: out.status, reason: out.reason, externalUrl: out.externalUrl }],
+      results: [
+        {
+          postId: row.id,
+          platform: row.platform,
+          status: out.status,
+          outcome: out.status,
+          reason: out.reason,
+          externalUrl: out.externalUrl || null, // null when nothing was published
+          statusAfter: out.status === 'PUBLISHED' ? 'PUBLISHED' : out.status === 'SKIPPED' ? row.status : 'FAILED',
+        },
+      ],
       published: out.status === 'PUBLISHED',
     });
   } catch (error: any) {

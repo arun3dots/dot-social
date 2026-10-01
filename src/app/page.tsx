@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import Header from '@/components/Header';
-import SocialAccountsCard from '@/components/SocialAccountsCard';
+import SocialAccountsCard, { PlatformStatus } from '@/components/SocialAccountsCard';
 import LLMSelectorCard from '@/components/LLMSelectorCard';
 import NicheInputCard from '@/components/NicheInputCard';
 import CalendarReviewBoard from '@/components/CalendarReviewBoard';
+import SettingsCard from '@/components/SettingsCard';
 import LogsViewer from '@/components/LogsViewer';
 import SubscriptionModal from '@/components/SubscriptionModal';
 import { getDefaultSubscription } from '@/lib/subscriptions';
@@ -18,14 +19,6 @@ import {
   PostItem,
   SubscriptionInfo,
 } from '@/types';
-
-const INITIAL_USER: UserSession = {
-  id: 'usr_creator_01',
-  name: 'Jane Creator',
-  email: 'jane@creatorstudio.dev',
-  role: 'CREATOR',
-  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
-};
 
 const INITIAL_CONNECTIONS: SocialConnection[] = [
   { platform: 'TWITTER', handle: 'Not connected', accountName: '', connected: false, isSandbox: true },
@@ -40,7 +33,8 @@ const INITIAL_LLM: LLMConfig = {
 };
 
 export default function CreatorHomePage() {
-  const [user, setUser] = useState<UserSession>(INITIAL_USER);
+  // Identity comes from the signed session - never a hardcoded placeholder.
+  const [user, setUser] = useState<UserSession>({ id: '', name: '', email: '', role: 'CREATOR', avatar: '' });
   const [activeTab, setActiveTab] = useState<'creator' | 'logs'>('creator');
   const [connections, setConnections] = useState<SocialConnection[]>(INITIAL_CONNECTIONS);
   const [llmConfig, setLlmConfig] = useState<LLMConfig>(INITIAL_LLM);
@@ -50,9 +44,39 @@ export default function CreatorHomePage() {
   const [notification, setNotification] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionInfo>(getDefaultSubscription('PRO_CREATOR'));
   const [isSubModalOpen, setIsSubModalOpen] = useState(false);
+  const [platformStatus, setPlatformStatus] = useState<PlatformStatus[]>([]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    fetch('/api/social/connections')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (Array.isArray(d?.connections) && d.connections.length) setConnections(d.connections);
+      })
+      .catch(console.error);
+
+    fetch('/api/social/platforms')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (Array.isArray(d?.platforms)) setPlatformStatus(d.platforms);
+      })
+      .catch(console.error);
+
+    fetch('/api/auth/session')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s) => {
+        if (s?.user) {
+          setUser({
+            id: s.user.id || '',
+            name: s.user.name || s.user.email || 'Creator',
+            email: s.user.email || '',
+            role: (s.user.role || 'CREATOR') as any,
+            avatar: s.user.image || '',
+          });
+        }
+      })
+      .catch(console.error);
 
     fetch('/api/subscriptions')
       .then((r) => r.json())
@@ -138,15 +162,32 @@ export default function CreatorHomePage() {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  const handleToggleConnect = (platform: Platform) => {
+  const handleToggleConnect = async (platform: Platform) => {
     const conn = connections.find((c) => c.platform === platform);
     if (conn?.connected) {
-      setConnections(
-        connections.map((c) =>
-          c.platform === platform ? { ...c, connected: false, handle: 'Not connected' } : c
-        )
-      );
-      showToast(`Disconnected ${platform}`);
+      // Revoke it for real. This used to only flip local state, so the channel reappeared as
+      // connected after a reload.
+      try {
+        const res = await fetch('/api/social/connections', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ platform }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'disconnect failed');
+        setConnections((prev) =>
+          prev.map((c) =>
+            c.platform === platform
+              ? { ...c, connected: false, isSandbox: true, handle: 'Not connected' }
+              : c
+          )
+        );
+        showToast(
+          data.wasConnected ? `Disconnected ${platform} and revoked its token.` : `${platform} was not connected.`
+        );
+      } catch (e: any) {
+        showToast(`Could NOT disconnect ${platform}: ${e.message}`);
+      }
       return;
     }
     // Real OAuth handoff: the server route builds the provider authorization URL.
@@ -173,7 +214,12 @@ export default function CreatorHomePage() {
 
       const data = await res.json();
       setCalendar(data);
-      showToast('3-Day Content Calendar batch synthesized successfully!');
+      const dayCount = Array.isArray(data.days) ? data.days.length : 0;
+      const imgs = data.imageSummary;
+      const imgNote = imgs
+        ? ` · images ${imgs.generated}/${imgs.attempted}${imgs.skipped ? ` (${imgs.skipped} over the per-request cap)` : ''}`
+        : '';
+      showToast(`${dayCount}-day batch generated with ${data.providerUsed || 'a model'}${imgNote}.`);
     } catch (e: any) {
       showToast(`Generation error: ${e.message}`);
     } finally {
@@ -181,39 +227,84 @@ export default function CreatorHomePage() {
     }
   };
 
-  const handleUpdatePost = (dayIndex: number, postId: string, updatedFields: Partial<PostItem>) => {
+  const applyLocally = (dayIndex: number, postId: string, updatedFields: Partial<PostItem>) => {
     if (!calendar) return;
-
-    const newDays = calendar.days.map((day) => {
-      if (day.dayIndex !== dayIndex) return day;
-      return {
-        ...day,
-        posts: day.posts.map((p) => (p.id === postId ? { ...p, ...updatedFields } : p)),
-      };
-    });
-
-    setCalendar({ ...calendar, days: newDays });
-    showToast('Post updated');
-  };
-
-  const handleApproveBatch = () => {
-    if (!calendar) return;
-
-    const newDays = calendar.days.map((day) => ({
-      ...day,
-      posts: day.posts.map((p) => ({
-        ...p,
-        status: 'SCHEDULED' as const,
-      })),
-    }));
-
     setCalendar({
       ...calendar,
-      batchStatus: 'SCHEDULED',
-      days: newDays,
+      days: calendar.days.map((day) =>
+        day.dayIndex !== dayIndex
+          ? day
+          : { ...day, posts: day.posts.map((p) => (p.id === postId ? { ...p, ...updatedFields } : p)) }
+      ),
     });
+  };
 
-    showToast('All 9 posts approved & queued for scheduled automated publishing!');
+  const handleUpdatePost = async (dayIndex: number, postId: string, updatedFields: Partial<PostItem>) => {
+    if (!calendar) return;
+
+    // Fields the database owns must be written to it, or a reload silently undoes the review.
+    const persistable = ['status', 'content', 'scheduledTime'].filter((k) => k in updatedFields);
+    if (persistable.length === 0) {
+      applyLocally(dayIndex, postId, updatedFields);
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/calendar/posts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, ...updatedFields }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'save failed');
+      // Reflect the SERVER's state, not what we hoped for.
+      applyLocally(dayIndex, postId, {
+        ...updatedFields,
+        status: (data.post?.status as PostItem['status']) || (updatedFields.status as PostItem['status']),
+      });
+      showToast(
+        updatedFields.status
+          ? `Post ${data.post.status} - persisted`
+          : 'Changes saved - persisted'
+      );
+    } catch (e: any) {
+      showToast(`NOT saved: ${e.message}`);
+    }
+  };
+
+  const handleApproveBatch = async () => {
+    if (!calendar) return;
+
+    try {
+      const res = await fetch('/api/calendar/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ calendarId: calendar.calendarId, status: 'APPROVED' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'approval failed');
+
+      setCalendar({
+        ...calendar,
+        batchStatus: data.status,
+        days: calendar.days.map((day) => ({
+          ...day,
+          posts: day.posts.map((p) =>
+            p.status === 'PENDING_APPROVAL' || p.status === 'FAILED'
+              ? { ...p, status: 'APPROVED' as const }
+              : p
+          ),
+        })),
+      });
+
+      // Report the real number that changed, and what the database now holds.
+      const counts = (data.counts || []).map((c: any) => `${c.count} ${c.status}`).join(', ');
+      showToast(
+        `${data.updatedPosts} post(s) approved and persisted${counts ? ' — database now holds: ' + counts : ''}.`
+      );
+    } catch (e: any) {
+      showToast(`Approval NOT saved: ${e.message}`);
+    }
   };
 
   const handlePublishSinglePost = async (post: PostItem) => {
@@ -222,15 +313,31 @@ export default function CreatorHomePage() {
       const res = await fetch('/api/calendar/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          post,
-          isSandbox: true,
-        }),
+        body: JSON.stringify({ postId: post.id }),
       });
 
       const data = await res.json();
       if (res.ok) {
-        const publishedUrl = data.results?.[0]?.externalUrl || `https://${post.platform.toLowerCase()}.com/mock_post`;
+        const result = data.results?.[0] || {};
+        if (result.status !== 'PUBLISHED' || !result.externalUrl) {
+          // Nothing was published. Say so, with the server's reason - do not invent a URL.
+          showToast(`${post.platform}: NOT published — ${result.reason || 'no reason returned'}`);
+          setCalendar((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  days: prev.days.map((d) => ({
+                    ...d,
+                    posts: d.posts.map((p) =>
+                      p.id === post.id ? { ...p, status: (result.statusAfter || p.status) as PostItem['status'] } : p
+                    ),
+                  })),
+                }
+              : prev
+          );
+          return;
+        }
+        const publishedUrl = result.externalUrl;
         if (calendar) {
           const updatedDays = calendar.days.map((day) => ({
             ...day,
@@ -288,11 +395,13 @@ export default function CreatorHomePage() {
               <SocialAccountsCard
                 connections={connections}
                 onToggleConnect={handleToggleConnect}
+                platformStatus={platformStatus}
               />
               <LLMSelectorCard
                 config={llmConfig}
                 onChangeConfig={setLlmConfig}
               />
+              <SettingsCard />
             </div>
 
             {/* Niche onboarding & generator */}

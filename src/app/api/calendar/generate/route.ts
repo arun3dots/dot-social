@@ -42,11 +42,12 @@ export async function POST(req: NextRequest) {
     let profileGoals: string[] = [];
     let profileScreenName = '';
     let profilePersona = '';
+    let profileImageQuality = 'low';
     if (userIdForProfile) {
       try {
         await initPostgresTables();
         const pr = await pool.query(
-          'SELECT cadence, niches, pillars, goals, screen_name, persona FROM users WHERE id = $1',
+          'SELECT cadence, niches, pillars, goals, screen_name, persona, image_quality FROM users WHERE id = $1',
           [userIdForProfile]
         );
         profileCadence = pr.rows[0]?.cadence ?? null;
@@ -55,6 +56,7 @@ export async function POST(req: NextRequest) {
         profileGoals = pr.rows[0]?.goals || [];
         profileScreenName = pr.rows[0]?.screen_name || '';
         profilePersona = pr.rows[0]?.persona || '';
+        profileImageQuality = pr.rows[0]?.image_quality || 'low';
       } catch (e) {
         profileCadence = null;
       }
@@ -74,7 +76,8 @@ export async function POST(req: NextRequest) {
     }
     if (!imageApiKey) imageProvider = '';
 
-    const imageQuality = String(body.imageQuality || 'low');
+    const requestedQuality = String(body.imageQuality || profileImageQuality || 'low').toLowerCase();
+    const imageQuality = ['low', 'medium', 'high'].includes(requestedQuality) ? requestedQuality : 'low';
     const requestedMaxImages = parseInt(String(body.maxImages ?? '6'), 10);
     const maxImages = Number.isFinite(requestedMaxImages) ? Math.max(0, Math.min(requestedMaxImages, 12)) : 6;
 
@@ -138,6 +141,15 @@ export async function POST(req: NextRequest) {
     calendar.calendarId = calendarId;
 
     const days: any[] = Array.isArray(calendar.days) ? calendar.days : [];
+
+    // The model invents post ids ("p1_tw"). Give every post the SAME id it will have in the
+    // database, so the studio can approve/dispatch a post by the id the server stored - without
+    // this, an approval sent from the UI matches no row.
+    for (const d of days) {
+      for (const p of (d.posts || [])) {
+        p.id = `post_${calendarId}_${d.dayIndex}_${String(p.platform).toLowerCase()}`;
+      }
+    }
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -164,7 +176,7 @@ export async function POST(req: NextRequest) {
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              ON CONFLICT (id) DO NOTHING`,
             [
-              `post_${calendarId}_${d.dayIndex}_${String(p.platform).toLowerCase()}`,
+              p.id,
               calendarId,
               userId,
               d.dayIndex ?? null,
@@ -194,6 +206,7 @@ export async function POST(req: NextRequest) {
       horizonDays,
       providerUsed,
       imageProvider: imageProvider || null,
+      imageQuality,
       imageSummary: calendar.imageSummary || null,
     });
   } catch (error: any) {

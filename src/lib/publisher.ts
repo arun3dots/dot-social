@@ -21,6 +21,8 @@ export async function publishPost(opts: {
   platform: string;
   content: string;
   mediaUrl?: string | null;
+  /** true only for a human-initiated single dispatch ("Dispatch Now"). */
+  explicit?: boolean;
 }): Promise<PublishOutcome> {
   const platform = String(opts.platform || '').toUpperCase();
 
@@ -42,6 +44,19 @@ export async function publishPost(opts: {
       status: 'SKIPPED',
       reason: `${platform} connection is sandbox (no live credentials) - nothing was posted`,
       mode: 'sandbox',
+    };
+  }
+
+  // Safety gate: the scheduler must not post to a real account until the owner arms it.
+  // An explicit per-post human dispatch ("Dispatch Now") is allowed through regardless.
+  const armed = (process.env.PUBLISHING_ENABLED || '').trim() === 'true';
+  if (!armed && !opts.explicit) {
+    return {
+      status: 'SKIPPED',
+      reason:
+        'live publishing is OFF (PUBLISHING_ENABLED is not "true") - the post was left queued. ' +
+        'Use Dispatch Now to post this one explicitly, or arm the scheduler.',
+      mode: 'live',
     };
   }
 

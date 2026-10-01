@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
+import pool, { initPostgresTables } from '@/lib/postgres';
 import { currentUserId } from '@/lib/session';
 
 const MEDIA_ROOT = path.join(process.cwd(), 'media');
@@ -12,7 +13,25 @@ export async function GET(_req: NextRequest, { params }: { params: { path: strin
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  const rel = (params.path || []).join('/');
+  const parts = params.path || [];
+  // Only /generated/<calendarId>/<file> is servable, and only to the calendar's owner.
+  // The id in the path was previously the only protection, which let any signed-in user read
+  // any other tenant's generated images.
+  if (parts[0] !== 'generated' || parts.length < 3) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+  const calendarId = parts[1];
+  try {
+    await initPostgresTables();
+    const owner = await pool.query('SELECT user_id FROM content_calendars WHERE id = $1', [calendarId]);
+    if (owner.rows.length === 0 || owner.rows[0].user_id !== userId) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+  } catch {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  const rel = parts.join('/');
   const resolved = path.resolve(MEDIA_ROOT, rel);
   // Path-traversal guard: the resolved file must stay inside the media root.
   if (!resolved.startsWith(path.resolve(MEDIA_ROOT) + path.sep)) {
