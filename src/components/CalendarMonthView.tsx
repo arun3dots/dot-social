@@ -58,7 +58,7 @@ export default function CalendarMonthView({
   connections = [],
   platformStatus = [],
 }: Props) {
-  /** Every post on a day, as the calendar currently holds them (used for the per-platform previews). */
+  /** Every post on a day: the group modal's tabs, and each platform's own image for the previews. */
   const postsForDay = (dayIndex: number): PostItem[] => {
     const day = (calendar.days || []).find((d) => Number(d.dayIndex) === Number(dayIndex));
     return day ? day.posts || [] : [];
@@ -307,105 +307,112 @@ export default function CalendarMonthView({
           <div className="p-4 text-[11px] font-mono text-zinc-500">Click a day to see and add posts.</div>
         ) : (
           <>
-            <div className="divide-y divide-zinc-800">
-              {(selectedDay?.posts || []).map((post) => (
-                <div key={post.id} className="p-4 flex flex-col gap-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="flex items-center gap-1 text-[10px] font-mono text-zinc-300">
-                      <PlatformIcon platform={post.platform} size={12} /> {post.platform}
-                    </span>
-                    <span
-                      className={`px-1.5 py-0.5 rounded border text-[9px] font-mono ${
-                        STATUS_STYLE[post.status] || 'bg-zinc-800 text-zinc-400 border-zinc-700'
-                      }`}
-                    >
-                      {post.status}
-                    </span>
-                    <span className="text-[10px] font-mono text-zinc-500">
-                      {new Date(post.scheduledTime).toLocaleString([], {
-                        day: '2-digit',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                    {post.mediaUrl ? (
-                      <span className="text-[10px] font-mono text-zinc-500">image</span>
-                    ) : (
-                      <span className="text-[10px] font-mono text-amber-500/80">no image</span>
-                    )}
-                    {post.manualExternalUrl && (
-                      <a
-                        href={post.manualExternalUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[10px] font-mono text-emerald-400 hover:text-emerald-300"
-                      >
-                        posted manually ↗
-                      </a>
-                    )}
-                    {post.externalUrl && (
-                      <a
-                        href={post.externalUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[10px] font-mono text-emerald-400 hover:text-emerald-300"
-                      >
-                        published ↗
-                      </a>
-                    )}
-                    <span className="text-[9px] font-mono text-zinc-600 ml-auto">{post.id}</span>
-                  </div>
-                  {post.mediaUrl && (
-                    <img src={post.mediaUrl} alt="" className="w-20 h-20 object-cover rounded border border-zinc-800" />
-                  )}
-                  <div className="text-[11px] text-zinc-400 leading-relaxed whitespace-pre-wrap line-clamp-4">
-                    {post.content || <span className="text-zinc-600">(empty)</span>}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setEditor({ post, dayIndex: selectedDay?.dayIndex || 1 })}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-[10px] font-mono text-zinc-300"
-                    >
-                      <Pencil size={10} /> Edit
-                    </button>
-                    {post.status === 'PENDING_APPROVAL' && (
-                      <button
-                        onClick={() => onUpdatePost(selectedDay?.dayIndex || 1, post.id, { status: 'APPROVED' })}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-[10px] font-mono text-white"
-                      >
-                        <Check size={10} /> Approve
-                      </button>
-                    )}
-                    {post.status !== 'PUBLISHED' && (
-                      <button
-                        onClick={() => setConfirmDispatch(post)}
-                        disabled={publishingId === post.id}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-black text-[10px] font-mono font-semibold disabled:opacity-50"
-                      >
-                        {publishingId === post.id ? <Loader2 size={10} className="animate-spin" /> : <Send size={10} />}
-                        Dispatch Now
-                      </button>
-                    )}
-                    {onDeletePost && post.status !== 'PUBLISHED' && (
-                      <button
-                        onClick={() => handleDelete(post)}
-                        disabled={busy === `del-${post.id}`}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-zinc-900 hover:bg-red-950 border border-zinc-800 hover:border-red-900 text-[10px] font-mono text-zinc-400 hover:text-red-300 disabled:opacity-50"
-                      >
-                        {busy === `del-${post.id}` ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />}
-                        Remove
-                      </button>
-                    )}
+            {(() => {
+              const posts = (selectedDay?.posts || [])
+                .slice()
+                .sort((a, b) => new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime());
+              const dayIndex = selectedDay?.dayIndex || 1;
+              if (posts.length === 0) {
+                return (
+                  <div className="p-4 text-[11px] font-mono text-zinc-500">No post on this day yet.</div>
+                );
+              }
+              const published = posts.filter((p) => p.status === 'PUBLISHED').length;
+              const open = (post?: PostItem) =>
+                setEditor({ post: post || posts.find((p) => p.status !== 'PUBLISHED') || posts[0], dayIndex });
+              return (
+                /* ONE card for the day: the platforms are rows inside it, not separate posts. */
+                <div className="p-4">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => open()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') open();
+                    }}
+                    className="bg-[#07090e] border border-zinc-800/80 rounded-md hover:border-cyan-800/60 cursor-pointer transition-colors"
+                  >
+                    <div className="divide-y divide-zinc-800/80">
+                      {posts.map((post) => (
+                        <div
+                          key={post.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            open(post);
+                          }}
+                          className="p-3 flex items-start gap-3"
+                        >
+                          {post.mediaUrl ? (
+                            <img
+                              src={post.mediaUrl}
+                              alt={`${post.platform} visual`}
+                              className="w-20 h-20 shrink-0 object-contain rounded border border-zinc-800 bg-black"
+                            />
+                          ) : (
+                            <div className="w-20 h-20 shrink-0 rounded border border-dashed border-zinc-800 flex items-center justify-center text-[9px] font-mono text-zinc-600 text-center px-1">
+                              no image
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap mb-1">
+                              <span className="flex items-center gap-1 text-[10px] font-mono text-zinc-300">
+                                <PlatformIcon platform={post.platform} size={12} /> {post.platform}
+                              </span>
+                              <span
+                                className={`px-1.5 py-0.5 rounded border text-[9px] font-mono ${
+                                  STATUS_STYLE[post.status] || 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                                }`}
+                              >
+                                {post.status}
+                              </span>
+                              <span className="text-[10px] font-mono text-zinc-500">
+                                {new Date(post.scheduledTime).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                              {post.manualExternalUrl && (
+                                <a
+                                  href={post.manualExternalUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-[10px] font-mono text-emerald-400 hover:text-emerald-300"
+                                >
+                                  posted manually ↗
+                                </a>
+                              )}
+                              {post.externalUrl && (
+                                <a
+                                  href={post.externalUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-[10px] font-mono text-emerald-400 hover:text-emerald-300"
+                                >
+                                  published ↗
+                                </a>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-zinc-400 leading-relaxed whitespace-pre-wrap line-clamp-3">
+                              {post.content || <span className="text-zinc-600">(empty)</span>}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="px-3 py-2 border-t border-zinc-800/80 flex items-center justify-between gap-3">
+                      <span className="text-[10px] font-mono text-zinc-500">
+                        One campaign — edit, approve or dispatch each platform in tabs
+                      </span>
+                      <span className="text-[10px] font-mono text-cyan-400 shrink-0">
+                        {published ? `${published} of ${posts.length} live · ` : ''}Open ▸
+                      </span>
+                    </div>
                   </div>
                 </div>
-              ))}
-              {(selectedDay?.posts || []).length === 0 && (
-                <div className="p-4 text-[11px] font-mono text-zinc-500">
-                  No post on this day yet.
-                </div>
-              )}
-            </div>
+              );
+            })()}
 
             {/* add another post on this day */}
             <div className="px-4 py-3 border-t border-zinc-800 flex items-center gap-2 flex-wrap">
@@ -466,13 +473,17 @@ export default function CalendarMonthView({
       {editor && (
         <PostEditorModal
           post={editor.post}
+          group={postsForDay(editor.dayIndex)}
           dayIndex={editor.dayIndex}
-          siblings={postsForDay(editor.dayIndex)}
           llm={llm}
           onClose={() => setEditor(null)}
           onSave={(dayIndex, postId, fields) => {
             onUpdatePost(dayIndex, postId, fields);
           }}
+          onApprovePost={(p) => onUpdatePost(editor.dayIndex, p.id, { status: 'APPROVED' })}
+          onDispatchPost={(p) => setConfirmDispatch(p)}
+          onDeletePost={(p) => handleDelete(p)}
+          publishingId={publishingId}
         />
       )}
     </div>

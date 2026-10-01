@@ -92,7 +92,7 @@ export default function CalendarReviewBoard({
     }
   };
 
-  /** Every post on a day, so the per-platform previews can show each platform's own image. */
+  /** Every post on a day: the group modal's tabs, and each platform's own image for the previews. */
   const siblingsForDay = (dayIndex: number): PostItem[] => {
     const day = (calendar.days || []).find((d) => Number(d.dayIndex) === Number(dayIndex));
     return day ? day.posts || [] : [];
@@ -143,130 +143,117 @@ export default function CalendarReviewBoard({
               <span className="text-xs font-semibold text-zinc-200">Theme: {day.theme}</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-              {day.posts.map((post) => {
-                const isPublishingThis = publishingId === post.id;
-
-                return (
-                  <div
-                    key={post.id}
-                    className="bg-[#07090e] border border-zinc-800/80 rounded-md p-3.5 flex flex-col justify-between hover:border-zinc-700 transition-colors"
-                  >
-                    <div>
-                      <div className="flex justify-between items-center mb-2.5">
-                        <div className="flex items-center gap-1.5">
-                          {getPlatformIcon(post.platform)}
-                          <span className="font-mono text-xs font-semibold text-zinc-200">
-                            {post.platform}
-                          </span>
-                        </div>
-                        {getStatusBadge(post.status)}
-                      </div>
-
-                      {post.mediaUrl && (
-                        <div className="mb-2.5 rounded overflow-hidden border border-zinc-800 relative h-28 bg-black">
+            {(() => {
+              const posts = (day.posts || [])
+                .slice()
+                .sort((a, b) => new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime());
+              const published = posts.filter((p) => p.status === 'PUBLISHED').length;
+              const firstPending = posts.find((p) => p.status !== 'PUBLISHED') || posts[0];
+              const open = () => firstPending && setEditor({ post: firstPending, dayIndex: day.dayIndex });
+              return (
+                /* ONE card for the whole day - the platforms are rows inside it, not separate posts. */
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={open}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') open();
+                  }}
+                  className="bg-[#07090e] border border-zinc-800/80 rounded-md hover:border-cyan-800/60 cursor-pointer transition-colors"
+                >
+                  <div className="divide-y divide-zinc-800/80">
+                    {posts.map((post) => (
+                      <div
+                        key={post.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditor({ post, dayIndex: day.dayIndex });
+                        }}
+                        className="p-3.5 flex items-start gap-3.5 hover:bg-zinc-900/40"
+                      >
+                        {post.mediaUrl ? (
                           <img
                             src={post.mediaUrl}
-                            alt="AI generated visual"
-                            className="w-full h-full object-cover opacity-90"
+                            alt={`${post.platform} visual`}
+                            className="w-24 h-24 shrink-0 object-contain rounded border border-zinc-800 bg-black"
                           />
-                          <div className="absolute bottom-1.5 left-1.5 text-[10px] font-mono bg-black/80 px-2 py-0.5 rounded text-zinc-300 flex items-center gap-1">
-                            <ImageIcon size={10} /> AI Visual Ready
+                        ) : (
+                          <div className="w-24 h-24 shrink-0 rounded border border-dashed border-zinc-800 flex items-center justify-center text-[9px] font-mono text-zinc-600 text-center px-1">
+                            no image
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {post.mediaPrompt && !post.mediaUrl && (
-                        <div className="mb-2.5 p-2 bg-zinc-900 border border-zinc-800 rounded text-[11px] text-zinc-400 font-mono">
-                          💡 Visual Prompt: {post.mediaPrompt}
-                        </div>
-                      )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                            {getPlatformIcon(post.platform)}
+                            <span className="font-mono text-xs font-semibold text-zinc-200">{post.platform}</span>
+                            {getStatusBadge(post.status)}
+                            <span className="flex items-center gap-1 text-[10px] font-mono text-zinc-500">
+                              <Clock size={10} />
+                              {new Date(post.scheduledTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            {Array.isArray(post.taggedUsers) && post.taggedUsers.length > 0 && (
+                              <span className="text-[10px] font-mono text-cyan-400/80">
+                                tags: {post.taggedUsers.map((t) => t.name || t.urn).join(', ')}
+                              </span>
+                            )}
+                            {post.manualExternalUrl && (
+                              <a
+                                href={post.manualExternalUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-400 hover:text-emerald-300"
+                              >
+                                posted manually
+                                {post.manualPublishedAt
+                                  ? ` ${new Date(post.manualPublishedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                                  : ''}{' '}
+                                <ExternalLink size={9} />
+                              </a>
+                            )}
+                            {post.externalUrl && (
+                              <a
+                                href={post.externalUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-400 hover:text-emerald-300"
+                              >
+                                live post <ExternalLink size={9} />
+                              </a>
+                            )}
+                          </div>
 
-                      <div
-                        className={`text-xs whitespace-pre-wrap leading-relaxed text-zinc-200 mb-3 ${
-                          post.platform === 'TWITTER' ? 'font-mono' : ''
-                        }`}
-                      >
-                        {post.content}
-                      </div>
-                      {post.manualExternalUrl && (
-                        <a
-                          href={post.manualExternalUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-400 hover:text-emerald-300 mb-2"
-                        >
-                          posted manually
-                          {post.manualPublishedAt
-                            ? ` ${new Date(post.manualPublishedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                            : ''}{' '}
-                          <ExternalLink size={9} />
-                        </a>
-                      )}
-
-                      {Array.isArray(post.taggedUsers) && post.taggedUsers.length > 0 && (
-                        <div className="text-[10px] font-mono text-cyan-400/80 mb-2">
-                          tags: {post.taggedUsers.map((t) => t.name || t.urn).join(', ')}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="border-t border-zinc-800/80 pt-2.5 mt-2">
-                      <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-mono mb-2.5">
-                        <Clock size={12} />
-                        <span>
-                          Scheduled:{' '}
-                          {new Date(post.scheduledTime).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
-                      </div>
-
-                      {post.externalUrl ? (
-                        <a
-                          href={post.externalUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="w-full py-1.5 px-3 rounded bg-zinc-900 border border-zinc-700 text-cyan-400 hover:text-cyan-300 font-mono text-xs flex items-center justify-center gap-1.5 transition-colors"
-                        >
-                          <ExternalLink size={12} />
-                          View Live/Mock Post
-                        </a>
-                      ) : (
-                        <div className="flex gap-1.5">
-                          <button
-                            onClick={() => setEditor({ post, dayIndex: day.dayIndex })}
-                            className="flex-1 py-1.5 px-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-mono text-xs flex items-center justify-center gap-1 border border-zinc-700"
+                          <div
+                            className={`text-xs whitespace-pre-wrap leading-relaxed text-zinc-300 line-clamp-3 ${
+                              post.platform === 'TWITTER' ? 'font-mono' : ''
+                            }`}
                           >
-                            <Edit3 size={11} /> Edit
-                          </button>
+                            {post.content || <span className="text-zinc-600">(empty)</span>}
+                          </div>
 
-                          {post.status === 'PENDING_APPROVAL' && (
-                            <button
-                              onClick={() => onUpdatePost(day.dayIndex, post.id, { status: 'APPROVED' })}
-                              className="flex-1 py-1.5 px-2 rounded bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-400 font-mono text-xs flex items-center justify-center gap-1 border border-emerald-800/50"
-                            >
-                              <Check size={11} /> Approve
-                            </button>
+                          {post.mediaPrompt && !post.mediaUrl && (
+                            <div className="mt-1.5 text-[10px] font-mono text-zinc-500 line-clamp-2">
+                              💡 {post.mediaPrompt}
+                            </div>
                           )}
-
-                          <button
-                            onClick={() => setConfirmDispatch(post)}
-                            disabled={isPublishingThis}
-                            className="py-1.5 px-3 rounded bg-cyan-600 hover:bg-cyan-500 text-black font-semibold font-mono text-xs flex items-center justify-center gap-1 transition-all"
-                            title="Post to the real account now (asks for confirmation)"
-                          >
-                            <Send size={11} />
-                            {isPublishingThis ? 'Dispatching...' : 'Dispatch Now'}
-                          </button>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    ))}
                   </div>
-                );
-              })}
-            </div>
+
+                  <div className="px-3.5 py-2.5 border-t border-zinc-800/80 flex items-center justify-between gap-3">
+                    <span className="text-[10px] font-mono text-zinc-500">
+                      One campaign — open it to edit, approve or dispatch each platform in tabs
+                    </span>
+                    <span className="text-[10px] font-mono text-cyan-400 shrink-0">
+                      {published ? `${published} of ${posts.length} live · ` : ''}Open ▸
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         ))}
       </div>
@@ -287,11 +274,14 @@ export default function CalendarReviewBoard({
       {editor && (
         <PostEditorModal
           post={editor.post}
+          group={siblingsForDay(editor.dayIndex)}
           dayIndex={editor.dayIndex}
-          siblings={siblingsForDay(editor.dayIndex)}
           llm={llm}
           onSave={onUpdatePost}
           onClose={() => setEditor(null)}
+          onApprovePost={(p) => onUpdatePost(editor.dayIndex, p.id, { status: 'APPROVED' })}
+          onDispatchPost={(p) => setConfirmDispatch(p)}
+          publishingId={publishingId}
         />
       )}
     </div>

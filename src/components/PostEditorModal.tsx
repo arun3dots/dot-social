@@ -4,10 +4,17 @@ import React, { useRef, useState } from 'react';
 import { PostItem } from '@/types';
 import { specFor } from '@/lib/platformSpecs';
 import PlatformPreview from '@/components/PlatformPreview';
+import { Linkedin, Twitter, Instagram, Check, Send, Trash2 } from 'lucide-react';
 
 interface Props {
   post: PostItem;
   dayIndex: number;
+  /** Rendered under the header (the platform tabs when this is a whole day's set). */
+  headerExtra?: React.ReactNode;
+  /** Rendered in the footer, left of Save/Close (approve / dispatch / remove for this post). */
+  actions?: React.ReactNode;
+  /** Roomier layout for the grouped, tabbed view. */
+  wide?: boolean;
   /** The other posts on this day, so the platform previews can show each platform's own image. */
   siblings?: PostItem[];
   llm?: { provider?: string; apiKey?: string; imageApiKey?: string; imageQuality?: string };
@@ -31,7 +38,7 @@ const QUALITY_COST: Record<string, string> = {
  * and stored, uploads are stored, and every result line reports what the server actually did.
  * Image regeneration uses the same generator as a batch, so platform sizes cannot drift.
  */
-export default function PostEditorModal({ post, dayIndex, siblings = [], llm, onSave, onClose }: Props) {
+function EditorBody({ post, dayIndex, siblings = [], llm, onSave, onClose, headerExtra, actions, wide }: Props) {
   const spec = specFor(post.platform);
 
   const [content, setContent] = useState(post.content || '');
@@ -195,7 +202,7 @@ export default function PostEditorModal({ post, dayIndex, siblings = [], llm, on
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 p-4 overflow-y-auto">
-      <div className="w-full max-w-2xl bg-[#0e121a] border border-zinc-700 rounded-lg shadow-2xl my-6">
+      <div className={`w-full ${wide ? 'max-w-6xl' : 'max-w-2xl'} bg-[#0e121a] border border-zinc-700 rounded-lg shadow-2xl my-6`}>
         {/* header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-800">
           <div className="flex items-center gap-2.5">
@@ -214,6 +221,10 @@ export default function PostEditorModal({ post, dayIndex, siblings = [], llm, on
             close
           </button>
         </div>
+
+        {headerExtra && (
+          <div className="px-5 py-2 border-b border-zinc-800 bg-zinc-950/50">{headerExtra}</div>
+        )}
 
         <div className="p-5 flex flex-col gap-5">
           {/* copy */}
@@ -418,7 +429,9 @@ export default function PostEditorModal({ post, dayIndex, siblings = [], llm, on
           {note && <div className="text-[11px] font-mono text-emerald-400 leading-relaxed">{note}</div>}
           {error && <div className="text-[11px] font-mono text-red-400 leading-relaxed">NOT saved: {error}</div>}
 
-          <div className="flex items-center justify-end gap-2 border-t border-zinc-800 pt-4">
+          <div className="flex items-center justify-between gap-2 border-t border-zinc-800 pt-4 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">{actions}</div>
+            <div className="flex items-center gap-2">
             <button
               onClick={saveAll}
               disabled={busy !== null || overLimit}
@@ -429,9 +442,140 @@ export default function PostEditorModal({ post, dayIndex, siblings = [], llm, on
             <button onClick={onClose} className="px-4 py-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-mono">
               Close
             </button>
+            </div>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+
+/* ---------------------------------------------------------------------------------------------------
+ * Group mode — this is what a card in the post list opens.
+ *
+ * One tab per platform post of that day; each tab edits ITS OWN post. The body is keyed by post id, so
+ * switching tabs can never carry one platform's copy, image or result line into another platform's tab.
+ * ------------------------------------------------------------------------------------------------- */
+
+const TAB_ICON: Record<string, React.ReactNode> = {
+  LINKEDIN: <Linkedin size={13} className="text-blue-500" />,
+  TWITTER: <Twitter size={13} className="text-sky-400" />,
+  INSTAGRAM: <Instagram size={13} className="text-pink-500" />,
+};
+
+const DOT: Record<string, string> = {
+  PENDING_APPROVAL: 'bg-amber-400',
+  APPROVED: 'bg-cyan-400',
+  SCHEDULED: 'bg-cyan-400',
+  PUBLISHED: 'bg-emerald-400',
+};
+
+export interface PostEditorModalProps {
+  post: PostItem;
+  /** Every post on that day: they become the tabs. Falls back to just `post`. */
+  group?: PostItem[];
+  dayIndex: number;
+  llm?: { provider?: string; apiKey?: string; imageApiKey?: string; imageQuality?: string };
+  onSave: (dayIndex: number, postId: string, fields: Partial<PostItem>) => void;
+  onClose: () => void;
+  onApprovePost?: (post: PostItem) => void;
+  onDispatchPost?: (post: PostItem) => void;
+  onDeletePost?: (post: PostItem) => void;
+  publishingId?: string | null;
+}
+
+export default function PostEditorModal({
+  post,
+  group,
+  dayIndex,
+  llm,
+  onSave,
+  onClose,
+  onApprovePost,
+  onDispatchPost,
+  onDeletePost,
+  publishingId,
+}: PostEditorModalProps) {
+  const posts = (group && group.length ? group : [post])
+    .slice()
+    .sort((a, b) => new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime());
+  const [activeId, setActiveId] = useState(post.id);
+  const active = posts.find((p) => p.id === activeId) || post;
+  const pending = posts.filter((p) => p.status === 'PENDING_APPROVAL').length;
+
+  const tabs = (
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className="text-[10px] font-mono text-zinc-500">
+        {posts.length} platform post{posts.length === 1 ? '' : 's'} on day {dayIndex}
+        {pending ? ` · ${pending} pending approval` : ''}
+      </span>
+      <span className="h-4 w-px bg-zinc-800" />
+      {posts.map((p) => {
+        const on = p.id === active.id;
+        return (
+          <button
+            key={p.id}
+            onClick={() => setActiveId(p.id)}
+            title={`${p.platform} · ${p.status} · ${new Date(p.scheduledTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded border font-mono text-[11px] transition-colors ${
+              on
+                ? 'bg-zinc-800 border-zinc-600 text-zinc-100'
+                : 'border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+            }`}
+          >
+            {TAB_ICON[p.platform]}
+            {p.platform}
+            <span className={`w-1.5 h-1.5 rounded-full ${DOT[p.status] || 'bg-zinc-500'}`} />
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const actions = (
+    <>
+      {onApprovePost && active.status === 'PENDING_APPROVAL' && (
+        <button
+          onClick={() => onApprovePost(active)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-mono"
+        >
+          <Check size={12} /> Approve {active.platform}
+        </button>
+      )}
+      {onDispatchPost && active.status !== 'PUBLISHED' && (
+        <button
+          onClick={() => onDispatchPost(active)}
+          disabled={publishingId === active.id}
+          className="flex items-center gap-1.5 px-3 py-2 rounded bg-cyan-600 hover:bg-cyan-500 text-black text-xs font-mono font-semibold disabled:opacity-50"
+          title="Posts to the real account now (asks for confirmation)"
+        >
+          <Send size={12} /> {publishingId === active.id ? 'Dispatching…' : `Dispatch ${active.platform} now`}
+        </button>
+      )}
+      {onDeletePost && active.status !== 'PUBLISHED' && (
+        <button
+          onClick={() => onDeletePost(active)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded bg-zinc-900 hover:bg-red-950 border border-zinc-800 hover:border-red-900 text-zinc-400 hover:text-red-300 text-xs font-mono"
+        >
+          <Trash2 size={12} /> Remove {active.platform}
+        </button>
+      )}
+    </>
+  );
+
+  return (
+    <EditorBody
+      key={active.id}
+      post={active}
+      dayIndex={dayIndex}
+      siblings={posts}
+      llm={llm}
+      onSave={onSave}
+      onClose={onClose}
+      headerExtra={tabs}
+      actions={actions}
+      wide={posts.length > 1}
+    />
   );
 }
