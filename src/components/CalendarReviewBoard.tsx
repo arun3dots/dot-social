@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { ContentCalendar, PostItem, Platform } from '@/types';
+import PostEditorModal from '@/components/PostEditorModal';
 import {
   Calendar,
   Twitter,
@@ -22,6 +23,8 @@ interface Props {
   onApproveBatch: () => void;
   onPublishSinglePost: (post: PostItem) => Promise<void>;
   publishingId: string | null;
+  /** Provider + BYOK key the editor uses for regenerate/suggest (never persisted). */
+  llm?: { provider?: string; apiKey?: string; imageApiKey?: string; imageQuality?: string };
 }
 
 export default function CalendarReviewBoard({
@@ -30,9 +33,10 @@ export default function CalendarReviewBoard({
   onApproveBatch,
   onPublishSinglePost,
   publishingId,
+  llm,
 }: Props) {
-  const [editingPostId, setEditingPostId] = useState<string | null>(null);
-  const [editContent, setEditContent] = useState('');
+  // Full editor in a modal: text, image (regenerate/upload), hashtags, tags, schedule.
+  const [editor, setEditor] = useState<{ post: PostItem; dayIndex: number } | null>(null);
 
   const getPlatformIcon = (platform: Platform) => {
     switch (platform) {
@@ -78,16 +82,6 @@ export default function CalendarReviewBoard({
           </span>
         );
     }
-  };
-
-  const startEdit = (post: PostItem) => {
-    setEditingPostId(post.id);
-    setEditContent(post.content);
-  };
-
-  const saveEdit = (dayIndex: number, postId: string) => {
-    onUpdatePost(dayIndex, postId, { content: editContent });
-    setEditingPostId(null);
   };
 
   const isAllApproved = calendar.days.every((d) =>
@@ -137,7 +131,6 @@ export default function CalendarReviewBoard({
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
               {day.posts.map((post) => {
-                const isEditing = editingPostId === post.id;
                 const isPublishingThis = publishingId === post.id;
 
                 return (
@@ -175,36 +168,16 @@ export default function CalendarReviewBoard({
                         </div>
                       )}
 
-                      {isEditing ? (
-                        <div className="mb-2.5">
-                          <textarea
-                            className="w-full bg-[#0b0e14] border border-zinc-700 rounded p-2 text-xs text-zinc-100 focus:outline-none focus:border-cyan-500"
-                            rows={5}
-                            value={editContent}
-                            onChange={(e) => setEditContent(e.target.value)}
-                          />
-                          <div className="flex gap-2 mt-2">
-                            <button
-                              onClick={() => saveEdit(day.dayIndex, post.id)}
-                              className="px-2.5 py-1 rounded bg-cyan-600 text-black font-mono text-xs font-semibold flex items-center gap-1"
-                            >
-                              <Check size={12} /> Save
-                            </button>
-                            <button
-                              onClick={() => setEditingPostId(null)}
-                              className="px-2.5 py-1 rounded bg-zinc-800 text-zinc-300 font-mono text-xs"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div
-                          className={`text-xs whitespace-pre-wrap leading-relaxed text-zinc-200 mb-3 ${
-                            post.platform === 'TWITTER' ? 'font-mono' : ''
-                          }`}
-                        >
-                          {post.content}
+                      <div
+                        className={`text-xs whitespace-pre-wrap leading-relaxed text-zinc-200 mb-3 ${
+                          post.platform === 'TWITTER' ? 'font-mono' : ''
+                        }`}
+                      >
+                        {post.content}
+                      </div>
+                      {Array.isArray(post.taggedUsers) && post.taggedUsers.length > 0 && (
+                        <div className="text-[10px] font-mono text-cyan-400/80 mb-2">
+                          tags: {post.taggedUsers.map((t) => t.name || t.urn).join(', ')}
                         </div>
                       )}
                     </div>
@@ -233,14 +206,12 @@ export default function CalendarReviewBoard({
                         </a>
                       ) : (
                         <div className="flex gap-1.5">
-                          {!isEditing && (
-                            <button
-                              onClick={() => startEdit(post)}
-                              className="flex-1 py-1.5 px-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-mono text-xs flex items-center justify-center gap-1 border border-zinc-700"
-                            >
-                              <Edit3 size={11} /> Edit
-                            </button>
-                          )}
+                          <button
+                            onClick={() => setEditor({ post, dayIndex: day.dayIndex })}
+                            className="flex-1 py-1.5 px-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-mono text-xs flex items-center justify-center gap-1 border border-zinc-700"
+                          >
+                            <Edit3 size={11} /> Edit
+                          </button>
 
                           {post.status === 'PENDING_APPROVAL' && (
                             <button
@@ -270,6 +241,16 @@ export default function CalendarReviewBoard({
           </div>
         ))}
       </div>
+
+      {editor && (
+        <PostEditorModal
+          post={editor.post}
+          dayIndex={editor.dayIndex}
+          llm={llm}
+          onSave={onUpdatePost}
+          onClose={() => setEditor(null)}
+        />
+      )}
     </div>
   );
 }

@@ -236,8 +236,46 @@ def main():
     ap.add_argument("--maxImages", type=int, default=6)
     ap.add_argument("--calendarId", default="")
     ap.add_argument("--output", default="")
+    # Single-image mode: regenerate ONE post's image through exactly the same path a batch uses
+    # (platform size -> provider -> resize to the exact platform dimensions).
+    ap.add_argument("--singleImage", default="")
+    ap.add_argument("--singleImagePrompt", default="")
+    ap.add_argument("--singleImageOut", default="")
     args = ap.parse_args()
 
+
+    # --- single-image regeneration (used by the post editor) ---
+    if args.singleImage:
+        platform = str(args.singleImage).upper()
+        spec = PLATFORM_SPECS.get(platform)
+        if not spec:
+            print(json.dumps({"ok": False, "error": f"unknown platform {platform}"}))
+            return
+        if not args.imageApiKey:
+            print(json.dumps({"ok": False, "error": "no image API key available (set OPENAI_API_KEY)"}))
+            return
+        out = Path(args.singleImageOut) if args.singleImageOut else Path(
+            args.imageDir or ".") / f"image_{platform.lower()}.png"
+        prompt = args.singleImagePrompt or f"An editorial image for a {spec['label']} post."
+        quality = args.imageQuality if args.imageQuality in ("low", "medium", "high") else "low"
+        ok, detail = generate_image_openai(
+            args.imageApiKey, prompt, spec["openai_size"], out,
+            quality=quality, model=os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1"))
+        if not ok:
+            print(json.dumps({"ok": False, "error": detail}))
+            return
+        rok, rdetail = resize_to_exact(out, spec["image_size"])
+        print(json.dumps({
+            "ok": True,
+            "path": str(out),
+            "width": spec["image_size"][0],
+            "height": spec["image_size"][1],
+            "quality": quality,
+            "bytes": out.stat().st_size if out.exists() else 0,
+            "resized": rok,
+            "resizeDetail": rdetail,
+        }))
+        return
     days = max(1, min(args.days, 7))  # hard cap: never more than a week in one batch
     pillars = [p for p in args.pillars.split("|") if p]
     goals = [g for g in args.goals.split("|") if g]

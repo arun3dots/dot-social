@@ -12,7 +12,7 @@ const ALLOWED_STATUS = ['PENDING_APPROVAL', 'APPROVED', 'SCHEDULED', 'PUBLISHED'
  * "approved & queued for scheduled automated publishing" while the database still said
  * PENDING_APPROVAL, so the scheduler could never pick those posts up and a reload undid the review.
  *
- * PATCH  { postId, status?, content?, scheduledTime? }  -> one post
+ * PATCH  { postId, status?, content?, scheduledTime?, mediaUrl?, taggedUsers? }  -> one post
  * POST   { calendarId, status }                         -> every post in a calendar (batch approve)
  */
 export async function PATCH(req: NextRequest) {
@@ -50,6 +50,22 @@ export async function PATCH(req: NextRequest) {
       vals.push(String(body.scheduledTime));
       sets.push(`scheduled_time = $${vals.length}`);
     }
+    if (body.mediaUrl !== undefined) {
+      vals.push(body.mediaUrl === null ? null : String(body.mediaUrl));
+      sets.push(`media_url = $${vals.length}`);
+    }
+    if (body.taggedUsers !== undefined) {
+      // Only real person URNs are kept: a tag that cannot be rendered is not worth storing.
+      const incoming = Array.isArray(body.taggedUsers) ? body.taggedUsers : [];
+      const clean = incoming
+        .map((t: any) => ({
+          name: String(t?.name || '').trim().slice(0, 80),
+          urn: String(t?.urn || '').trim().slice(0, 120),
+        }))
+        .filter((t: any) => t.urn.startsWith('urn:li:person:'));
+      vals.push(JSON.stringify(clean));
+      sets.push(`tagged_users = $${vals.length}::jsonb`);
+    }
     if (sets.length === 0) {
       return NextResponse.json({ error: 'nothing to update' }, { status: 400 });
     }
@@ -57,7 +73,7 @@ export async function PATCH(req: NextRequest) {
     vals.push(postId, userId);
     const updated = await pool.query(
       `UPDATE posts SET ${sets.join(', ')} WHERE id = $${vals.length - 1} AND user_id = $${vals.length}
-       RETURNING id, status, content, scheduled_time`,
+       RETURNING id, status, content, scheduled_time, media_url, tagged_users`,
       vals
     );
 

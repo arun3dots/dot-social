@@ -1,4 +1,11 @@
 import pool from '@/lib/postgres';
+import {
+  createLinkedInPost,
+  linkedInMemberId,
+  mentionToken,
+  resolveMediaFile,
+  uploadLinkedInImage,
+} from '@/lib/linkedin';
 
 export type PublishOutcome = {
   status: 'PUBLISHED' | 'FAILED' | 'SKIPPED';
@@ -21,6 +28,9 @@ export async function publishPost(opts: {
   platform: string;
   content: string;
   mediaUrl?: string | null;
+  /** People to mention in the post, as urn:li:person:<id>. LinkedIn only renders these for
+   *  accounts the author is connected to. */
+  taggedUsers?: { name: string; urn: string }[] | null;
   /** true only for a human-initiated single dispatch ("Dispatch Now"). */
   explicit?: boolean;
 }): Promise<PublishOutcome> {
@@ -73,55 +83,74 @@ export async function publishPost(opts: {
 }
 
 /**
- * LinkedIn UGC post. Text-only for now: image upload needs the assets API and an
- * approved app, so a post with an image is still sent as text (never as a stock photo).
+ * LinkedIn post via the versioned REST API.
+ *
+ * A post that has an image gets that image uploaded and attached (initializeUpload -> PUT the
+ * bytes -> /rest/posts with content.media.id). If the image is requested and the upload fails,
+ * the dispatch FAILS with the provider's reason - it never quietly degrades to a text-only post,
+ * which is how the image was silently dropped before.
  */
 async function publishLinkedIn(
   token: string,
-  opts: { content: string; mediaUrl?: string | null }
-): Promise<PublishOutcome> {
-  try {
-    const who = await fetch('https://api.linkedin.com/v2/userinfo', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!who.ok) {
-      return { status: 'FAILED', reason: `LinkedIn auth check failed: HTTP ${who.status}`, mode: 'live' };
-    }
-    const me: any = await who.json();
-
-    const res = await fetch('https://api.linkedin.com/v2/ugcPosts', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'X-Restli-Protocol-Version': '2.0.0',
-      },
-      body: JSON.stringify({
-        author: `urn:li:person:${me.sub}`,
-        lifecycleState: 'PUBLISHED',
-        specificContent: {
-          'com.linkedin.ugc.ShareContent': {
-            shareCommentary: { text: opts.content },
-            shareMediaCategory: 'NONE',
-          },
-        },
-        visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' },
-      }),
-    });
-
-    if (!res.ok) {
-      const detail = (await res.text()).slice(0, 200);
-      return { status: 'FAILED', reason: `LinkedIn rejected the post: HTTP ${res.status} ${detail}`, mode: 'live' };
-    }
-    const id = res.headers.get('x-restli-id') || '';
-    return {
-      status: 'PUBLISHED',
-      reason: opts.mediaUrl ? 'accepted by LinkedIn (text only - image upload not implemented)' : 'accepted by LinkedIn',
-      mode: 'live',
-      externalId: id || undefined,
-      externalUrl: id ? `https://www.linkedin.com/feed/update/${id}` : undefined,
-    };
-  } catch (e: any) {
-    return { status: 'FAILED', reason: `LinkedIn request error: ${e.message}`, mode: 'live' };
+  opts: {
+    content: string;
+    mediaUrl?: string | null;
+    taggedUsers?: { name: string; urn: string }[] | null;
   }
+): Promise<PublishOutcome> {
+  const me = await linkedInMemberId(token);
+  if (!me.ok) return { status: 'FAILED', reason: me.reason, mode: 'live' };
+  const authorUrn = `urn:li:person:${me.value}`;
+
+  // Mentions go at the end of the commentary, in LinkedIn's own format.
+  const mentions = (opts.taggedUsers || [])
+    .filter((t) => t && t.urn)
+    .map((t) => mentionToken(t.name, t.urn));
+  const commentary = [opts.content, mentions.join(' ')].filter(Boolean).join('\n\n').slice(0, 3000);
+
+  let imageUrn: string | undefined;
+  if (opts.mediaUrl) {
+    const file = resolveMediaFile(opts.mediaUrl);
+    if (!file.ok) return { status: 'FAILED', reason: `image not attachable: ${file.reason}`, mode: 'live' };
+
+    const uploaded = await uploadLinkedInImage(token, {
+      ownerUrn: authorUrn,
+      filePath: file.value.filePath,
+      contentType: file.value.contentType,
+    });
+    if (!uploaded.ok) return { status: 'FAILED', reason: uploaded.reason, mode: 'live' };
+    imageUrn = uploaded.value;
+  }
+
+  // Test-only switch: proves the whole pipeline (including the image) without putting anything
+  // on the live feed. A draft is NOT a published post, so it is reported as skipped, not success.
+  const asDraft = (process.env.LINKEDIN_POST_AS_DRAFT || '').trim() === 'true';
+
+  const created = await createLinkedInPost(token, {
+    authorUrn,
+    commentary,
+    imageUrn,
+    altText: opts.content,
+    lifecycleState: asDraft ? 'DRAFT' : 'PUBLISHED',
+  });
+  if (!created.ok) return { status: 'FAILED', reason: created.reason, mode: 'live' };
+
+  if (asDraft) {
+    return {
+      status: 'SKIPPED',
+      reason:
+        `created as a LinkedIn DRAFT (not published - LINKEDIN_POST_AS_DRAFT=true), id ${created.value.id || 'unknown'}` +
+        (imageUrn ? `, image ${imageUrn} attached` : ', no image'),
+      mode: 'live',
+      externalId: created.value.id || undefined,
+    };
+  }
+
+  return {
+    status: 'PUBLISHED',
+    reason: imageUrn ? `accepted by LinkedIn with image ${imageUrn}` : 'accepted by LinkedIn (text post)',
+    mode: 'live',
+    externalId: created.value.id || undefined,
+    externalUrl: created.value.url,
+  };
 }

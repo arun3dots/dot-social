@@ -127,6 +127,8 @@ export async function initPostgresTables() {
     await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS publish_attempts INT DEFAULT 0;`);
     await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS external_id TEXT;`);
     await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS external_url TEXT;`);
+    // People to mention in the post (urn:li:person:...), kept as JSON so a post can carry several.
+    await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS tagged_users JSONB DEFAULT '[]'::jsonb;`);
 
     await client.query(`CREATE INDEX IF NOT EXISTS idx_posts_user ON posts(user_id);`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_posts_calendar ON posts(calendar_id);`);

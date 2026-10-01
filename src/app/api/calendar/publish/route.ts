@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     let row: any = null;
     if (body.postId) {
       const r = await pool.query(
-        `SELECT id, user_id, platform, content, media_url, scheduled_time, status
+        `SELECT id, user_id, platform, content, media_url, scheduled_time, status, tagged_users
          FROM posts WHERE id = $1 AND user_id = $2`,
         [body.postId, userId]
       );
@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
         media_url: body.post.mediaUrl ?? null,
         scheduled_time: body.post.scheduledTime ?? null,
         status: body.post.status ?? 'PENDING_APPROVAL',
+        tagged_users: body.post.taggedUsers ?? null,
       };
     } else {
       return NextResponse.json({ error: 'postId or post is required' }, { status: 400 });
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
       platform: row.platform,
       content: row.content,
       mediaUrl: row.media_url,
+      taggedUsers: Array.isArray(row.tagged_users) ? row.tagged_users : null,
       explicit: true, // a human pressed Dispatch Now for this specific post
     });
 

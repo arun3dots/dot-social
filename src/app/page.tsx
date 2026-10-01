@@ -45,9 +45,17 @@ export default function CreatorHomePage() {
   const [subscription, setSubscription] = useState<SubscriptionInfo>(getDefaultSubscription('PRO_CREATOR'));
   const [isSubModalOpen, setIsSubModalOpen] = useState(false);
   const [platformStatus, setPlatformStatus] = useState<PlatformStatus[]>([]);
+  const [imageQuality, setImageQuality] = useState('low');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    fetch('/api/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.settings?.imageQuality) setImageQuality(d.settings.imageQuality);
+      })
+      .catch(console.error);
 
     fetch('/api/social/connections')
       .then((r) => (r.ok ? r.json() : null))
@@ -418,6 +426,11 @@ export default function CreatorHomePage() {
                 onApproveBatch={handleApproveBatch}
                 onPublishSinglePost={handlePublishSinglePost}
                 publishingId={publishingId}
+                llm={{
+                  provider: String(llmConfig.provider || '').toLowerCase(),
+                  apiKey: llmConfig.apiKey,
+                  imageQuality,
+                }}
               />
             )}
           </div>

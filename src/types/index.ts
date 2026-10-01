@@ -52,6 +52,8 @@ export interface PostItem {
   status: 'PENDING_APPROVAL' | 'APPROVED' | 'SCHEDULED' | 'PUBLISHED' | 'FAILED';
   externalUrl?: string;
   publishedAt?: string;
+  /** People to mention, as urn:li:person:... (LinkedIn only, and only for connected members). */
+  taggedUsers?: { name: string; urn: string }[];
 }
 
 export interface CalendarDay {
