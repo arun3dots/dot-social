@@ -180,6 +180,8 @@ export function imagePromptRefinePrompt(args: {
   niche?: string;
   tone?: string;
   postText?: string;
+  /** True when the user's own image is handed to the image model as the SOURCE of this picture. */
+  hasInputImage?: boolean;
 }): string {
   const sizes = args.platforms
     .map((p) => {
@@ -189,11 +191,22 @@ export function imagePromptRefinePrompt(args: {
     .join('\n');
   const oneFrame = args.platforms.length === 1 ? specFor(args.platforms[0]) : null;
 
+  const sourceRule = args.hasInputImage
+    ? `
+THIS IS AN EDIT OF A REAL PICTURE THE USER SUPPLIED
+- the user's own image is given to the image model as the source, and the model must work FROM it
+- the finished prompt MUST keep that picture's subject, composition and colour palette recognisable
+- change only what the brief asks for (light, background, framing, polish) - never describe a different
+  scene, a different person, or objects that are not in the supplied picture
+- do not invent props, text or settings that would replace what the picture shows
+`
+    : '';
+
   return `You are an art director writing one image-generation prompt.
 
 THE USER'S BRIEF (keep this as the subject, do not replace the idea)
 "${args.userPrompt}"
-
+${sourceRule}
 CONTEXT
 - brand niche: ${args.niche || 'not specified'}
 - tone: ${args.tone || 'not specified'}

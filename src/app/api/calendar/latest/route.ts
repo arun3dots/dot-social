@@ -30,7 +30,7 @@ export async function GET() {
     // snapshot and goes stale the moment someone approves or edits a post - serving it directly
     // made an approval look lost after a reload. So overlay every post from its row.
     const rows = await pool.query(
-      `SELECT id, day_index, platform, content, media_prompt, media_url, scheduled_time, status,
+      `SELECT id, day_index, platform, content, media_prompt, media_url, reference_urls, scheduled_time, status,
               external_url, published_at, tagged_users, manual_published_at, manual_external_url
          FROM posts WHERE calendar_id = $1
         ORDER BY day_index ASC, platform ASC`,

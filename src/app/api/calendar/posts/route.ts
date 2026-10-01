@@ -54,6 +54,24 @@ export async function PATCH(req: NextRequest) {
       vals.push(body.mediaUrl === null ? null : String(body.mediaUrl));
       sets.push(`media_url = $${vals.length}`);
     }
+    if (body.referenceUrls !== undefined) {
+      // The user's own input image(s) for this post's image. Only paths into THIS post's own media directory
+      // are accepted, so a caller cannot point the image generator at an arbitrary file or URL.
+      const cal = await pool.query('SELECT calendar_id FROM posts WHERE id = $1 AND user_id = $2', [postId, userId]);
+      const calendarId = String(cal.rows[0]?.calendar_id || '');
+      const incoming = Array.isArray(body.referenceUrls) ? body.referenceUrls : [];
+      const safe: string[] = [];
+      for (const raw of incoming) {
+        const u = String(raw);
+        const prefix = `/api/media/generated/${calendarId}/`;
+        const base = u.slice(prefix.length);
+        if (u.startsWith(prefix) && base.length > 0 && !base.includes('/') && !base.includes('\\') && base !== '..') {
+          safe.push(u);
+        }
+      }
+      vals.push(JSON.stringify(safe));
+      sets.push(`reference_urls = $${vals.length}::jsonb`);
+    }
     if (body.taggedUsers !== undefined) {
       // Only real person URNs are kept: a tag that cannot be rendered is not worth storing.
       const incoming = Array.isArray(body.taggedUsers) ? body.taggedUsers : [];

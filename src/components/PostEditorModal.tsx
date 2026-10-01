@@ -157,6 +157,7 @@ function EditorBody({ post, dayIndex, siblings = [], llm, onSave, onClose, heade
         `Image ${d.imageMode === 'reference' ? `generated from your ${d.references} input image(s)` : 'generated'} at ${d.width}×${d.height}${d.size ? ` (${d.size})` : ''} (${(d.bytes / 1048576).toFixed(2)} MB, quality ${d.quality}` +
           `${d.mode === 'resize' ? ', the shape already matched so it is a straight resize' : d.mode ? `, fitted whole into the frame (${d.content} shown, ${d.bandPx}px blurred edge) - nothing cropped` : ', NOT resized'}` +
           `) and saved to the post.` +
+          (d.promptSource ? ` Prompt: ${d.promptSource}.` : '') +
           (d.promptRefined ? ' Your brief was fine-tuned into the prompt below.' : '') +
           (d.note ? ` ${d.note}.` : '')
       );

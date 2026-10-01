@@ -124,7 +124,12 @@ export async function POST(req: NextRequest) {
     // the stored prompt is reused, and if there is none either, a plain description of the post.
     const userPrompt = String(body.imagePrompt || '').trim();
     const excerpt = String(post.content || '').replace(/\s+/g, ' ').trim().slice(0, 240);
-    let prompt = (post.media_prompt || '').trim() ||
+    // A prompt stored by an EARLIER run belongs to that run. When the user's own image is the source, a stored
+    // text-to-image prompt describes a different picture and simply overrides their image - which is exactly
+    // what happened: a stored "laptop screen with green code" prompt beat the supplied portrait. In reference
+    // mode the stored prompt is therefore NOT reused as the instruction; the input image is the subject.
+    const storedPrompt = mode === 'reference' ? '' : (post.media_prompt || '').trim();
+    let prompt = storedPrompt ||
       (mode === 'reference'
         ? `Make a ${spec.label} post image FROM the supplied input image. Keep the subject, the composition and the ` +
           `colour palette of the supplied image recognisable — clean it up, frame it for ${spec.ratio}, and improve ` +
@@ -146,6 +151,7 @@ export async function POST(req: NextRequest) {
           niche: post.niche,
           tone: post.tone,
           postText: post.content,
+          hasInputImage: mode === 'reference',
         }), 500);
         if (fin.ok) {
           const cleaned = sanitiseImagePrompt(fin.text);
@@ -208,6 +214,7 @@ export async function POST(req: NextRequest) {
       content: parsed.content || null,
       bandPx: parsed.bandPx ?? 0,
       prompt,
+      promptSource: userPrompt ? (refined ? 'your brief, fine-tuned' : 'your words as written') : mode === 'reference' ? 'written to keep your input image' : 'the prompt stored with this post',
       promptRefined: refined,
       yourPrompt: userPrompt || null,
       note: refineNote,
