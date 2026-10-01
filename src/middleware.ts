@@ -22,6 +22,13 @@ export async function middleware(req: NextRequest) {
     pathname === '/admin/login' ||
     pathname.startsWith('/api/auth');
 
+  // Endpoints that do their own authentication instead of relying on the session cookie:
+  //  - /api/scheduler/* : requires SCHEDULER_SECRET (headless cron) or an ADMIN session
+  //  - /api/media/*     : requires a signed-in user; it also serves <img> fetches, which
+  //                       must not be redirected to an HTML login page
+  const selfAuthenticating =
+    pathname.startsWith('/api/scheduler') || pathname.startsWith('/api/media');
+
   // Read NextAuth token
   const token = await getToken({
     req,
@@ -56,7 +63,7 @@ export async function middleware(req: NextRequest) {
   }
 
   // 5. Protect Creator application routes (/, /api/calendar/*, /api/subscriptions)
-  if (!isPublicRoute) {
+  if (!isPublicRoute && !selfAuthenticating) {
     if (!isAuthenticated) {
       // Unauthenticated -> redirect to creator login
       return NextResponse.redirect(new URL('/login?error=auth_required', req.url));

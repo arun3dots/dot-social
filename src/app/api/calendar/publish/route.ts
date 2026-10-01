@@ -1,88 +1,88 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { spawn } from 'child_process';
-import path from 'path';
-import { appendDbAuditLog } from '@/lib/postgres';
-import pool from '@/lib/postgres';
+import pool, { appendDbAuditLog, initPostgresTables } from '@/lib/postgres';
 import { currentUserId } from '@/lib/session';
+import { publishPost } from '@/lib/publisher';
 
+/**
+ * Dispatch a single post now. Accepts either a persisted post ({ postId }) or the
+ * legacy inline body ({ post }). Both go through the same publisher as the scheduler,
+ * so the UI can never claim a post went out when it did not.
+ */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { post, isSandbox = true } = body;
-    const sessionUserId = await currentUserId();
-
-    if (!post) {
-      return NextResponse.json({ error: 'Post object is required' }, { status: 400 });
+    const body = await req.json().catch(() => ({}));
+    const userId = await currentUserId();
+    if (!userId) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const rootDir = process.cwd();
-    const scriptPath = path.join(rootDir, 'tools', 'scheduler_worker.py');
+    await initPostgresTables();
 
-    const postPayload = JSON.stringify({
-      ...post,
-      isSandbox,
-    });
-
-    const child = spawn('python', [scriptPath, '--postJson', postPayload]);
-
-    let stdoutData = '';
-    let stderrData = '';
-
-    child.stdout.on('data', (d) => {
-      stdoutData += d.toString();
-    });
-
-    child.stderr.on('data', (d) => {
-      stderrData += d.toString();
-    });
-
-    const exitCode = await new Promise<number>((resolve) => {
-      child.on('close', resolve);
-    });
-
-    if (exitCode === 0 && stdoutData) {
-      try {
-        const parsed = JSON.parse(stdoutData);
-        const result = parsed.results?.[0] || parsed;
-
-        // Persist to PostgreSQL database audit log
-        try {
-          await appendDbAuditLog({
-            userId: sessionUserId || post.userId || 'usr_creator_01',
-            platform: post.platform,
-            postId: post.id,
-            status: result.status || 'SUCCESS',
-            isSandbox: result.isSandbox ?? isSandbox,
-            payload: post,
-            externalId: result.externalId,
-            externalUrl: result.externalUrl,
-          });
-        } catch (dbErr) {
-          console.error('Failed to log to PostgreSQL:', dbErr);
-        }
-
-        // Reflect the new status on the persisted post row (if we know which one it is).
-        if (post.calendarId && post.id) {
-          try {
-            await pool.query(
-              `UPDATE posts SET status = $1 WHERE calendar_id = $2 AND id LIKE $3`,
-              [result.status || 'PUBLISHED', post.calendarId, `post_${post.calendarId}_%${String(post.platform).toLowerCase()}`]
-            );
-          } catch (dbErr) {
-            console.error('Failed to update post status:', dbErr);
-          }
-        }
-
-        return NextResponse.json(parsed);
-      } catch (e) {
-        // fallback
+    let row: any = null;
+    if (body.postId) {
+      const r = await pool.query(
+        `SELECT id, user_id, platform, content, media_url, scheduled_time, status
+         FROM posts WHERE id = $1 AND user_id = $2`,
+        [body.postId, userId]
+      );
+      if (r.rows.length === 0) {
+        return NextResponse.json({ error: 'Post not found for this user' }, { status: 404 });
       }
+      row = r.rows[0];
+    } else if (body.post) {
+      row = {
+        id: body.post.id,
+        user_id: userId,
+        platform: body.post.platform,
+        content: body.post.content,
+        media_url: body.post.mediaUrl ?? null,
+        scheduled_time: body.post.scheduledTime ?? null,
+        status: body.post.status ?? 'PENDING_APPROVAL',
+      };
+    } else {
+      return NextResponse.json({ error: 'postId or post is required' }, { status: 400 });
     }
 
-    return NextResponse.json(
-      { error: 'Publish failed', details: stderrData || stdoutData },
-      { status: 500 }
-    );
+    const out = await publishPost({
+      userId,
+      platform: row.platform,
+      content: row.content,
+      mediaUrl: row.media_url,
+    });
+
+    if (body.postId) {
+      const statusAfter = out.status === 'PUBLISHED' ? 'PUBLISHED' : out.status === 'SKIPPED' ? row.status : 'FAILED';
+      await pool.query(
+        `UPDATE posts
+            SET status = $1::varchar, publish_error = $2,
+                publish_attempts = COALESCE(publish_attempts, 0) + 1,
+                published_at = CASE WHEN $1::text = 'PUBLISHED' THEN NOW() ELSE published_at END,
+                external_id = $3, external_url = $4
+          WHERE id = $5`,
+        [statusAfter, out.status === 'PUBLISHED' ? null : out.reason, out.externalId || null, out.externalUrl || null, row.id]
+      );
+    }
+
+    try {
+      await appendDbAuditLog({
+        userId,
+        platform: row.platform,
+        postId: row.id,
+        status: out.status,
+        isSandbox: out.mode === 'sandbox',
+        payload: { reason: out.reason },
+        externalId: out.externalId,
+        externalUrl: out.externalUrl,
+      });
+    } catch (e) {
+      console.error('audit log failed', e);
+    }
+
+    return NextResponse.json({
+      processedCount: 1,
+      results: [{ postId: row.id, platform: row.platform, status: out.status, reason: out.reason, externalUrl: out.externalUrl }],
+      published: out.status === 'PUBLISHED',
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

@@ -120,6 +120,13 @@ export async function initPostgresTables() {
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+    // 8. Publish bookkeeping: what actually happened when we tried to post.
+    await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;`);
+    await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS publish_error TEXT;`);
+    await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS publish_attempts INT DEFAULT 0;`);
+    await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS external_id TEXT;`);
+    await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS external_url TEXT;`);
+
     await client.query(`CREATE INDEX IF NOT EXISTS idx_posts_user ON posts(user_id);`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_posts_calendar ON posts(calendar_id);`);
 

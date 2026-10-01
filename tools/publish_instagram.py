@@ -1,3 +1,5 @@
+# DEPRECATED: superseded by src/lib/publisher.ts (called by /api/scheduler/run and
+# /api/calendar/publish). Kept for reference only - nothing invokes this any more.
 import os
 import sys
 import json
