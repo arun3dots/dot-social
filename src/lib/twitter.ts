@@ -5,9 +5,10 @@ import path from 'path';
  * X (Twitter) publishing via the v2 API with OAuth 2.0 PKCE.
  *
  * - Text posts: POST /2/tweets with a Bearer token carrying the tweet.write scope.
- * - Images: v2 chunked media upload (INIT -> APPEND -> FINALIZE) carrying the media.write scope,
- *   then the media_id is attached on the tweet. The legacy v1.1 upload host accepts OAuth 1.0a
- *   signatures only, so we use the v2 endpoint exclusively.
+ * - Images: the v2 media upload's single-request form - POST /2/media/upload with a multipart
+ *   `media` file field + media_category/media_type - carrying the media.write scope, then the
+ *   media_id is attached on the tweet. (The chunked initialize/append/finalize path is for video,
+ *   which this product does not post; the legacy v1.1 upload host takes OAuth 1.0a signatures only.)
  * - Tokens: X access tokens expire in ~2h, so the publisher refreshes with the stored refresh
  *   token (offline.access) before posting when the token is near expiry.
  */
@@ -57,7 +58,14 @@ export async function refreshXToken(
   }
 }
 
-/** Upload an image (chunked, single segment) and return the media_id to attach to a post. */
+/**
+ * Upload an image and return the media_id to attach to a post.
+ *
+ * Images use the single-request upload: one multipart/form-data POST with the file in the `media`
+ * field plus media_category and media_type. It does NOT take a `command` - sending INIT here is what
+ * X rejects with "Missing media field in JSON". No INIT/APPEND/FINALIZE and no status polling are
+ * needed for images.
+ */
 export async function uploadXMedia(
   token: string,
   filePath: string,
@@ -65,58 +73,27 @@ export async function uploadXMedia(
 ): Promise<XResult<string>> {
   try {
     const bytes = fs.readFileSync(filePath);
-    const totalBytes = bytes.length;
+    const fileName = path.basename(filePath) || 'image';
 
-    // INIT
-    const initForm = new FormData();
-    initForm.append('command', 'INIT');
-    initForm.append('total_bytes', String(totalBytes));
-    initForm.append('media_type', contentType);
-    initForm.append('media_category', 'tweet_image');
-    const initRes = await fetch(UPLOAD_URL, {
+    const form = new FormData();
+    form.append('media', new Blob([new Uint8Array(bytes)], { type: contentType }), fileName);
+    form.append('media_category', 'tweet_image');
+    form.append('media_type', contentType);
+
+    const res = await fetch(UPLOAD_URL, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
-      body: initForm,
+      body: form,
     });
-    const initText = await initRes.text();
-    if (!initRes.ok) {
-      return { ok: false, reason: `X refused the media upload init: HTTP ${initRes.status} ${initText.slice(0, 220)}` };
+    const text = await res.text();
+    if (!res.ok) {
+      return { ok: false, reason: `X refused the media upload: HTTP ${res.status} ${text.slice(0, 220)}` };
     }
-    let mediaId = '';
-    try {
-      mediaId = JSON.parse(initText)?.data?.id || '';
-    } catch { /* fall through */ }
-    if (!mediaId) return { ok: false, reason: `X upload init returned no media id: ${initText.slice(0, 200)}` };
-
-    // APPEND (one segment - images are well under the 5 MB limit)
-    const appendForm = new FormData();
-    appendForm.append('command', 'APPEND');
-    appendForm.append('media_id', mediaId);
-    appendForm.append('segment_index', '0');
-    appendForm.append('media', new Blob([new Uint8Array(bytes)], { type: contentType }));
-    const appendRes = await fetch(UPLOAD_URL, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: appendForm,
-    });
-    if (!appendRes.ok) {
-      const detail = (await appendRes.text()).slice(0, 200);
-      return { ok: false, reason: `X rejected the media append: HTTP ${appendRes.status} ${detail}` };
-    }
-
-    // FINALIZE
-    const finForm = new FormData();
-    finForm.append('command', 'FINALIZE');
-    finForm.append('media_id', mediaId);
-    const finRes = await fetch(UPLOAD_URL, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: finForm,
-    });
-    const finText = await finRes.text();
-    if (!finRes.ok) return { ok: false, reason: `X media finalize failed: HTTP ${finRes.status} ${finText.slice(0, 220)}` };
-
-    return { ok: true, value: mediaId };
+    let json: any = {};
+    try { json = JSON.parse(text); } catch { /* fall through */ }
+    const mediaId = json?.data?.id || json?.id || '';
+    if (!mediaId) return { ok: false, reason: `X upload returned no media id: ${text.slice(0, 200)}` };
+    return { ok: true, value: String(mediaId) };
   } catch (e: any) {
     return { ok: false, reason: `X media upload error: ${e.message}` };
   }
