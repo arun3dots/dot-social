@@ -52,6 +52,18 @@ export async function GET(req: NextRequest, { params }: { params: { platform: st
   auth.searchParams.set('state', state);
   auth.searchParams.set('scope', config.scope);
 
+  // PKCE: the challenge must be in the URL BEFORE the redirect is built, and the verifier cookie must
+  // ride on the SAME response as the state cookie. The previous code built a second redirect and copied
+  // `res.headers.get('Set-Cookie')` across, which collapses two Set-Cookie headers into one and drops
+  // the verifier - the browser then reached the token endpoint with no code_verifier (HTTP 400).
+  let verifier: string | undefined;
+  if (config.usesPkce) {
+    const pair = pkcePair();
+    verifier = pair.verifier;
+    auth.searchParams.set('code_challenge', pair.challenge);
+    auth.searchParams.set('code_challenge_method', 'S256');
+  }
+
   const res = NextResponse.redirect(auth.toString());
 
   const cookieOpts = {
@@ -62,16 +74,8 @@ export async function GET(req: NextRequest, { params }: { params: { platform: st
     maxAge: 600,
   };
   res.cookies.set(stateCookieName(platform), state, cookieOpts);
-
-  if (config.usesPkce) {
-    const { verifier, challenge } = pkcePair();
-    auth.searchParams.set('code_challenge', challenge);
-    auth.searchParams.set('code_challenge_method', 'S256');
+  if (verifier) {
     res.cookies.set(verifierCookieName(platform), verifier, cookieOpts);
-    // rebuild the redirect now that the challenge is present
-    return NextResponse.redirect(auth.toString(), {
-      headers: { 'Set-Cookie': res.headers.get('Set-Cookie') as string },
-    });
   }
 
   return res;
