@@ -5,6 +5,7 @@ import fs from 'fs';
 import pool, { initPostgresTables } from '@/lib/postgres';
 import { currentUserId } from '@/lib/session';
 import { clampHorizon, daysForCadence } from '@/lib/cadence';
+import { localWallTimeToUtc, userTimezone } from '@/lib/schedule';
 
 const MAX_HORIZON_DAYS = 7; // hard cap: never generate a month in one stretch
 
@@ -145,7 +146,9 @@ export async function POST(req: NextRequest) {
     // Dates and times are the server's decision, not the model's. The model has produced days in
     // April 2025 for a calendar generated in October 2026, which made every post instantly overdue.
     // Day 1 starts tomorrow, consecutive days follow, and every platform keeps its own slot.
+    // Slots are LOCAL wall-clock hours in the user's timezone, converted to UTC for storage.
     const SLOT_HOUR: Record<string, number> = { TWITTER: 14, LINKEDIN: 15, INSTAGRAM: 18 };
+    const tz = await userTimezone(userId);
     days.sort((a: any, b: any) => Number(a?.dayIndex ?? 0) - Number(b?.dayIndex ?? 0));
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const baseUtc = Date.UTC(tomorrow.getUTCFullYear(), tomorrow.getUTCMonth(), tomorrow.getUTCDate());
@@ -155,9 +158,7 @@ export async function POST(req: NextRequest) {
       d.date = dayDate.toISOString().slice(0, 10);
       for (const p of (d.posts || [])) {
         const h = SLOT_HOUR[String(p.platform)] ?? 14;
-        p.scheduledTime = new Date(
-          Date.UTC(dayDate.getUTCFullYear(), dayDate.getUTCMonth(), dayDate.getUTCDate(), h, 0, 0)
-        ).toISOString();
+        p.scheduledTime = localWallTimeToUtc(dayDate.toISOString().slice(0, 10), h, 0, tz);
       }
     });
 

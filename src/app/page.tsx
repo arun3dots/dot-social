@@ -184,6 +184,11 @@ export default function CreatorHomePage() {
   const handleToggleConnect = async (platform: Platform) => {
     const conn = connections.find((c) => c.platform === platform);
     if (conn?.connected) {
+      // Confirming first: the same button flips to Disconnect when connected, and a mis-click
+      // silently revoked a live connection (this exact accident happened with LinkedIn).
+      if (!window.confirm(`Disconnect ${platform}? This revokes its token; scheduled posts on it will be skipped.`)) {
+        return;
+      }
       // Revoke it for real. This used to only flip local state, so the channel reappeared as
       // connected after a reload.
       try {
@@ -452,6 +457,31 @@ export default function CreatorHomePage() {
     }
   };
 
+  // One click dispatches every platform post on a day (X + LinkedIn + Instagram) through the same
+  // publisher as a single dispatch. Each platform reports its own honest outcome.
+  const handlePublishDay = async (dayIndex: number, date: string) => {
+    if (!calendar) return;
+    const day = calendar.days.find((d) => Number(d.dayIndex) === Number(dayIndex));
+    const posts = day?.posts || [];
+    if (posts.length === 0) return;
+    if (!window.confirm(`Publish ${posts.map((p) => p.platform).join(', ')} now on ${date}? This posts to each connected account immediately.`)) {
+      return;
+    }
+    try {
+      const res = await fetch('/api/calendar/publish-day', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ calendarId: calendar.calendarId, dayIndex, keepScheduled: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'publish failed');
+      showToast(data.note || `Dispatched ${data.processedCount} post(s).`);
+      await restoreCalendar({ silent: true });
+    } catch (e: any) {
+      showToast(`Publish all failed: ${e.message}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#07090e] text-[#f1f5f9] flex flex-col font-sans">
       <Header
@@ -531,6 +561,7 @@ export default function CreatorHomePage() {
                 onUpdatePost={handleUpdatePost}
                 onApproveBatch={handleApproveBatch}
                 onPublishSinglePost={handlePublishSinglePost}
+                onPublishDay={handlePublishDay}
                 publishingId={publishingId}
                 connections={connections}
                 platformStatus={platformStatus}

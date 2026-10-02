@@ -13,6 +13,7 @@ import {
   sanitiseImagePrompt,
 } from '@/lib/ai';
 import { specFor } from '@/lib/platformSpecs';
+import { localWallTimeToUtc, timezoneLabel, userTimezone } from '@/lib/schedule';
 
 /**
  * Add post(s) to a particular day of a calendar - one per selected platform - optionally with an image.
@@ -409,11 +410,13 @@ export async function POST(req: NextRequest) {
     const createdPosts: any[] = [];
     const results: any[] = [];
 
+    // Slots are LOCAL wall-clock hours in the user's timezone, converted to UTC for storage.
+    const tz = await userTimezone(userId);
     for (const draft of drafts) {
       const platform = draft.platform;
       const spec = specFor(platform);
       const slotHour = SLOTS[platform] ?? 14;
-      const scheduledTime = explicitTime || new Date(`${dateStr}T${String(slotHour).padStart(2, '0')}:00:00Z`).toISOString();
+      const scheduledTime = explicitTime || localWallTimeToUtc(dateStr, slotHour, 0, tz);
 
       const baseId = `post_${calendar.id}_${dayIndex}_${platform.toLowerCase()}`;
       let id = baseId;
@@ -453,7 +456,7 @@ export async function POST(req: NextRequest) {
         imagePrompt: !!storedPrompt,
         image: imageFile && !imageFile.error ? `${imageFile.width}x${imageFile.height} ${imageFile.mode}${imageFile.bandPx ? ` (${imageFile.bandPx}px band)` : ''}` : null,
         imageError: imageFile?.error || null,
-        slot: `${String(slotHour).padStart(2, '0')}:00 UTC`,
+        slot: `${String(slotHour).padStart(2, '0')}:00 ${timezoneLabel(tz)}`,
         note: draft.note || `generated ${draft.content.length} characters`,
       });
     }

@@ -40,6 +40,7 @@ export async function initPostgresTables() {
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cadence VARCHAR(16) DEFAULT 'weekly';`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN DEFAULT FALSE;`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS image_quality VARCHAR(8) DEFAULT 'low';`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR(64) DEFAULT 'UTC';`);
 
     // 2. Subscriptions table
     await client.query(`

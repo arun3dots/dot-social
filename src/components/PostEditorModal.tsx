@@ -43,9 +43,15 @@ function EditorBody({ post, dayIndex, siblings = [], llm, onSave, onClose, heade
 
   const [content, setContent] = useState(post.content || '');
   const [mediaUrl, setMediaUrl] = useState(post.mediaUrl || '');
-  const [scheduledTime, setScheduledTime] = useState(
-    post.scheduledTime ? new Date(post.scheduledTime).toISOString().slice(0, 16) : ''
-  );
+  // A datetime-local input is LOCAL time: render the UTC timestamp in the user's local zone.
+  // Showing UTC here made the field several hours off and made edits round-trip incorrectly.
+  const [scheduledTime, setScheduledTime] = useState(() => {
+    if (!post.scheduledTime) return '';
+    const d = new Date(post.scheduledTime);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  });
   const [tags, setTags] = useState<{ name: string; urn: string }[]>(
     Array.isArray((post as any).taggedUsers) ? (post as any).taggedUsers : []
   );

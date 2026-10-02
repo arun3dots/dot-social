@@ -23,6 +23,7 @@ interface Props {
   onUpdatePost: (dayIndex: number, postId: string, updatedFields: Partial<PostItem>) => void;
   onApproveBatch: () => void;
   onPublishSinglePost: (post: PostItem, opts: { keepScheduled: boolean }) => Promise<void>;
+  onPublishDay: (dayIndex: number, date: string) => void;
   publishingId: string | null;
   /** Provider + BYOK key the editor uses for regenerate/suggest (never persisted). */
   llm?: { provider?: string; apiKey?: string; imageApiKey?: string; imageQuality?: string };
@@ -36,6 +37,7 @@ export default function CalendarReviewBoard({
   onUpdatePost,
   onApproveBatch,
   onPublishSinglePost,
+  onPublishDay,
   publishingId,
   llm,
   connections = [],
@@ -135,12 +137,23 @@ export default function CalendarReviewBoard({
             key={day.dayIndex}
             className="bg-[#0e121a] border border-zinc-800 rounded-lg p-4 shadow-xl"
           >
-            <div className="flex items-center gap-2.5 pb-3 mb-4 border-b border-zinc-800/80">
-              <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-cyan-950/40 text-cyan-400 border border-cyan-800/40 font-semibold">
-                DAY {day.dayIndex}
-              </span>
-              <span className="font-mono text-xs text-zinc-400">{day.date}</span>
-              <span className="text-xs font-semibold text-zinc-200">Theme: {day.theme}</span>
+            <div className="flex items-center justify-between gap-2.5 pb-3 mb-4 border-b border-zinc-800/80">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-cyan-950/40 text-cyan-400 border border-cyan-800/40 font-semibold">
+                  DAY {day.dayIndex}
+                </span>
+                <span className="font-mono text-xs text-zinc-400">{day.date}</span>
+                <span className="text-xs font-semibold text-zinc-200 truncate">Theme: {day.theme}</span>
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPublishDay(day.dayIndex, day.date);
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-mono border border-cyan-700/60 text-cyan-300 hover:bg-cyan-950/40 transition-colors shrink-0"
+              >
+                <Send size={12} /> Publish all platforms
+              </button>
             </div>
 
             {(() => {

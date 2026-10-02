@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
     const cand = await pool.query(
       `SELECT id, user_id, platform, content, media_url, scheduled_time, status, tagged_users
        FROM posts WHERE status IN ('APPROVED', 'SCHEDULED')
+       AND COALESCE(publish_attempts, 0) < 24
        ORDER BY scheduled_time ASC LIMIT 200`
     );
 
