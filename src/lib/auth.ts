@@ -20,7 +20,7 @@ const demoAllowed =
 // Same person must always map to the same user row. Previously creators got
 // `usr_creator_${Date.now()}` — a NEW id on every login, which made per-user
 // persistence impossible.
-function stableUserId(email: string): string {
+export function stableUserId(email: string): string {
   return 'usr_' + crypto.createHash('sha256').update(email.toLowerCase()).digest('hex').slice(0, 20);
 }
 
@@ -179,6 +179,10 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
         token.role = user.role || 'CREATOR';
+        // Persist email/name into the token: identity must be re-resolvable by email later (the
+        // frozen id can dangle after a migration), and older sessions omit it entirely.
+        token.email = (user.email as string) || token.email;
+        token.name = (user.name as string) || token.name;
       }
       return token;
     },
