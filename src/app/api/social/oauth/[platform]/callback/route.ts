@@ -58,16 +58,20 @@ export async function GET(req: NextRequest, { params }: { params: { platform: st
   }
 
   // Keyed to the signed-in user. is_sandbox is FALSE only because a real token was issued.
-  await pool.query(
-    `INSERT INTO social_connections (id, user_id, platform, account_handle, account_name, connected, is_sandbox, access_token)
-     VALUES ($1, $2, $3, $4, $5, TRUE, FALSE, $6)
-     ON CONFLICT (user_id, platform)
-     DO UPDATE SET connected = TRUE, is_sandbox = FALSE,
-                   access_token = EXCLUDED.access_token,
-                   account_handle = EXCLUDED.account_handle,
-                   account_name = EXCLUDED.account_name`,
-    [`conn_${platform.toLowerCase()}_${userId.slice(4, 16)}`, userId, platform, identity.handle, identity.name, exchanged.token]
-  );
+  try {
+    await pool.query(
+      `INSERT INTO social_connections (id, user_id, platform, account_handle, account_name, connected, is_sandbox, access_token)
+       VALUES ($1, $2, $3, $4, $5, TRUE, FALSE, $6)
+       ON CONFLICT (user_id, platform)
+       DO UPDATE SET connected = TRUE, is_sandbox = FALSE,
+                     access_token = EXCLUDED.access_token,
+                     account_handle = EXCLUDED.account_handle,
+                     account_name = EXCLUDED.account_name`,
+      [`conn_${platform.toLowerCase()}_${userId.slice(4, 16)}`, userId, platform, identity.handle, identity.name, exchanged.token]
+    );
+  } catch (e: any) {
+    return fail(`could not save the connection: ${e.message}`);
+  }
 
   const res = NextResponse.redirect(`${baseUrl}/?connected=${platform}&mode=live&handle=${encodeURIComponent(identity.handle)}`);
   res.cookies.delete(stateCookieName(platform));

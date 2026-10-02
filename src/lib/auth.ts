@@ -154,7 +154,10 @@ export const authOptions: NextAuthOptions = {
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
             profile(profile) {
               return {
-                id: profile.sub,
+                // Google's `sub` is provider-specific; the app keys every user by email, so derive the
+                // same id as every other sign-in path (usr_<sha256(email)>). Using `sub` here split one
+                // person across two ids and made social_connections INSERTs violate the users.id FK.
+                id: profile.email ? stableUserId(profile.email) : profile.sub,
                 name: profile.name,
                 email: profile.email,
                 image: profile.picture,
