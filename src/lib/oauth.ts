@@ -108,8 +108,11 @@ export async function exchangeCode(
   try {
     let res: Response;
 
-    if (c.tokenUrl.endsWith('/oauth/token')) {
-      // X: confidential client, credentials in the Basic header
+    if (c.usesPkce) {
+      // X (Twitter) is the PKCE platform: confidential client, credentials in the Basic header, and the
+      // code_verifier MUST ride in the body. (A URL-suffix check like `endsWith('/oauth/token')` misses
+      // X's real endpoint https://api.twitter.com/2/oauth2/token and silently fell into the LinkedIn
+      // branch, which never sends code_verifier - hence X's "Missing required parameter [code_verifier]".)
       const basic = Buffer.from(`${c.clientId}:${c.clientSecret}`).toString('base64');
       res = await fetch(c.tokenUrl, {
         method: 'POST',
