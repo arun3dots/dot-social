@@ -75,6 +75,11 @@ export async function initPostgresTables() {
       );
     `);
 
+    // OAuth 2.0 refresh tokens (X). The access token expires in ~2h; the refresh token lets the
+    // publisher mint a fresh one without the user re-authorizing.
+    await client.query(`ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS refresh_token TEXT;`);
+    await client.query(`ALTER TABLE social_connections ADD COLUMN IF NOT EXISTS token_expires_at TIMESTAMPTZ;`);
+
     // 4. Content Calendars table
     await client.query(`
       CREATE TABLE IF NOT EXISTS content_calendars (

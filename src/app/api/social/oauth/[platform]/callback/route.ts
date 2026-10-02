@@ -59,15 +59,20 @@ export async function GET(req: NextRequest, { params }: { params: { platform: st
 
   // Keyed to the signed-in user. is_sandbox is FALSE only because a real token was issued.
   try {
+    const tokenExpiresAt = exchanged.expiresIn
+      ? new Date(Date.now() + exchanged.expiresIn * 1000).toISOString()
+      : null;
     await pool.query(
-      `INSERT INTO social_connections (id, user_id, platform, account_handle, account_name, connected, is_sandbox, access_token)
-       VALUES ($1, $2, $3, $4, $5, TRUE, FALSE, $6)
+      `INSERT INTO social_connections (id, user_id, platform, account_handle, account_name, connected, is_sandbox, access_token, refresh_token, token_expires_at)
+       VALUES ($1, $2, $3, $4, $5, TRUE, FALSE, $6, $7, $8)
        ON CONFLICT (user_id, platform)
        DO UPDATE SET connected = TRUE, is_sandbox = FALSE,
                      access_token = EXCLUDED.access_token,
+                     refresh_token = EXCLUDED.refresh_token,
+                     token_expires_at = EXCLUDED.token_expires_at,
                      account_handle = EXCLUDED.account_handle,
                      account_name = EXCLUDED.account_name`,
-      [`conn_${platform.toLowerCase()}_${userId.slice(4, 16)}`, userId, platform, identity.handle, identity.name, exchanged.token]
+      [`conn_${platform.toLowerCase()}_${userId.slice(4, 16)}`, userId, platform, identity.handle, identity.name, exchanged.token, exchanged.refreshToken || null, tokenExpiresAt]
     );
   } catch (e: any) {
     return fail(`could not save the connection: ${e.message}`);

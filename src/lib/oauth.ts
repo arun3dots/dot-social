@@ -23,7 +23,7 @@ export function oauthConfig(platform: string): OAuthConfig | null {
       return {
         authorizeUrl: 'https://twitter.com/i/oauth2/authorize',
         tokenUrl: 'https://api.twitter.com/2/oauth2/token',
-        scope: 'tweet.read tweet.write users.read offline.access',
+        scope: 'tweet.read tweet.write users.read offline.access media.write',
         clientId: (process.env.TWITTER_CLIENT_ID || '').trim() || undefined,
         clientSecret: (process.env.TWITTER_CLIENT_SECRET || '').trim() || undefined,
         usesPkce: true,
@@ -97,7 +97,7 @@ export function verifierCookieName(platform: string): string {
 export async function exchangeCode(
   platform: string,
   args: { code: string; baseUrl: string; verifier?: string }
-): Promise<{ ok: true; token: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; token: string; refreshToken?: string; expiresIn?: number } | { ok: false; reason: string }> {
   const c = oauthConfig(platform);
   if (!c) return { ok: false, reason: 'unsupported platform' };
   if (!c.clientId || !c.clientSecret) {
@@ -159,7 +159,9 @@ export async function exchangeCode(
     try { json = JSON.parse(text); } catch { /* some providers reply form-encoded */ }
     const token = json.access_token || new URLSearchParams(text).get('access_token');
     if (!token) return { ok: false, reason: `${platform} token response carried no access_token` };
-    return { ok: true, token };
+    const refreshToken = json.refresh_token || new URLSearchParams(text).get('refresh_token') || undefined;
+    const expiresIn = json.expires_in ? Number(json.expires_in) : undefined;
+    return { ok: true, token, refreshToken, expiresIn };
   } catch (e: any) {
     return { ok: false, reason: `${platform} token exchange failed: ${e.message}` };
   }
