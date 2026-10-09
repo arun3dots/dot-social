@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { SocialConnection, Platform } from '@/types';
-import { Twitter, Linkedin, Instagram, Link as LinkIcon } from 'lucide-react';
+import { Twitter, Linkedin, Instagram, Link2 } from 'lucide-react';
 
 export type PlatformStatus = { platform: string; configured: boolean; requiredEnv: string };
 
@@ -12,105 +12,96 @@ interface Props {
   platformStatus?: PlatformStatus[];
 }
 
+const PLATFORM_META: Record<Platform, { label: string; color: string; bg: string }> = {
+  TWITTER:   { label: 'X (Twitter)',  color: '#0f172a', bg: '#e0f2fe' },
+  LINKEDIN:  { label: 'LinkedIn',     color: '#0a66c2', bg: '#dbeafe' },
+  INSTAGRAM: { label: 'Instagram',    color: '#e1306c', bg: '#fce7f3' },
+};
+
+function PlatformIcon({ platform, size = 16 }: { platform: Platform; size?: number }) {
+  if (platform === 'TWITTER')   return <Twitter   size={size} style={{ color: '#0f172a' }} />;
+  if (platform === 'LINKEDIN')  return <Linkedin  size={size} style={{ color: '#0a66c2' }} />;
+  return                               <Instagram size={size} style={{ color: '#e1306c' }} />;
+}
+
 export default function SocialAccountsCard({ connections, onToggleConnect, platformStatus = [] }: Props) {
-  const getIcon = (platform: Platform) => {
-    switch (platform) {
-      case 'TWITTER':
-        return <Twitter size={16} className="text-sky-400" />;
-      case 'LINKEDIN':
-        return <Linkedin size={16} className="text-blue-500" />;
-      case 'INSTAGRAM':
-        return <Instagram size={16} className="text-pink-500" />;
-    }
-  };
-
   const statusFor = (platform: Platform) => platformStatus.find((p) => p.platform === platform);
-
   const configuredCount = platformStatus.filter((p) => p.configured).length;
 
   return (
-    <div className="bg-[#0e121a] border border-zinc-800 rounded-lg p-5 shadow-xl transition-all hover:border-zinc-700">
-      <div className="mb-4">
-        <h2 className="text-sm font-semibold tracking-tight text-zinc-100 flex items-center gap-2 mb-1">
-          <LinkIcon size={16} className="text-cyan-400" />
+    <div className="card">
+      <div className="card-header">
+        <div className="card-title">
+          <Link2 size={15} className="text-sky-600" />
           Connected Social Channels
-        </h2>
-        <p className="text-xs text-zinc-400">
+        </div>
+        <div className="card-desc">
           {platformStatus.length === 0
-            ? 'Checking which platforms this instance is configured for…'
-            : `${configuredCount} of ${platformStatus.length} platforms have app credentials. A channel can only be connected once its credentials exist.`}
-        </p>
+            ? 'Checking platform credentials…'
+            : `${configuredCount} of ${platformStatus.length} platforms have live API credentials.`}
+        </div>
       </div>
 
-      <div className="flex flex-col gap-2.5">
+      <div className="card-body flex flex-col gap-2.5">
         {connections.map((c) => {
           const st = statusFor(c.platform);
           const configured = st ? st.configured : true;
+          const meta = PLATFORM_META[c.platform];
+
           return (
-            <div
-              key={c.platform}
-              className="flex items-center justify-between p-3 bg-[#07090e] border border-zinc-800/80 rounded-md hover:border-zinc-700/80 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded bg-zinc-900 border border-zinc-800 flex items-center justify-center">
-                  {getIcon(c.platform)}
+            <div key={c.platform} className="connection-row">
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border border-slate-200/80"
+                  style={{ background: meta.bg }}
+                >
+                  <PlatformIcon platform={c.platform} size={16} />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-semibold text-zinc-100">{c.platform}</span>
 
-                    <span
-                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium ${
-                        c.connected
-                          ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/40'
-                          : 'bg-zinc-900 text-zinc-500 border border-zinc-800'
-                      }`}
-                    >
-                      {c.connected ? 'CONNECTED' : 'DISCONNECTED'}
-                    </span>
-
-                    {/* Report the connection's real mode. This used to print a hardcoded
-                        "SANDBOX" badge on every row, even for a live connection. */}
-                    {c.connected && (
-                      <span
-                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono border ${
-                          c.isSandbox
-                            ? 'text-amber-400 bg-amber-950/30 border-amber-900/40'
-                            : 'text-emerald-400 bg-emerald-950/30 border-emerald-900/40'
-                        }`}
-                      >
-                        {c.isSandbox ? 'SANDBOX' : 'LIVE'}
-                      </span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-semibold text-xs text-slate-900">{meta.label}</span>
+                    {c.connected ? (
+                      <>
+                        <span className="badge badge-connected">Connected</span>
+                        <span className="badge badge-sandbox">
+                          {c.isSandbox ? 'Sandbox' : 'Live'}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="badge badge-disconnected">Not connected</span>
                     )}
-
                     {!configured && (
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-400 bg-zinc-900 border border-zinc-700">
-                        NOT CONFIGURED
+                      <span className="badge bg-amber-50 text-amber-700 border-amber-200">
+                        Needs env key
                       </span>
                     )}
                   </div>
-
-                  <div className="text-[11px] text-zinc-400 font-mono mt-0.5">
-                    {!configured
-                      ? `set ${st?.requiredEnv} in .env to enable`
+                  <div className="text-[11px] text-slate-500 truncate font-mono mt-0.5">
+                    {!configured && !c.connected
+                      ? `Set ${st?.requiredEnv} in .env`
                       : c.handle}
                   </div>
                 </div>
               </div>
 
               <button
+                type="button"
                 onClick={() => onToggleConnect(c.platform)}
-                disabled={!configured}
-                title={!configured ? `Not available: ${st?.requiredEnv} is not set` : undefined}
-                className={`px-3 py-1.5 rounded text-xs font-mono font-medium transition-all ${
-                  !configured
-                    ? 'bg-zinc-900 text-zinc-600 border border-zinc-800 cursor-not-allowed'
-                    : c.connected
-                    ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700'
-                    : 'bg-cyan-600 hover:bg-cyan-500 text-black font-semibold'
+                className={`btn btn-sm shrink-0 font-medium ${
+                  c.connected
+                    ? 'btn-secondary text-slate-700 hover:text-rose-600 hover:border-rose-300'
+                    : 'btn-primary'
                 }`}
+                title={
+                  !configured && !c.connected
+                    ? `Warning: ${st?.requiredEnv} not set. Click to configure.`
+                    : c.connected
+                    ? `Disconnect ${c.platform}`
+                    : `Connect ${c.platform}`
+                }
               >
-                {!configured ? 'Unavailable' : c.connected ? 'Disconnect' : 'Connect Account'}
+                {c.connected ? 'Disconnect' : 'Connect'}
               </button>
             </div>
           );

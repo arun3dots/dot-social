@@ -14,6 +14,7 @@ import {
   sanitiseImagePrompt,
 } from '@/lib/ai';
 import { specFor } from '@/lib/platformSpecs';
+import { uploadLocalFileToS3 } from '@/lib/s3';
 
 /**
  * Regenerate part of a post, from the post editor.
@@ -190,13 +191,28 @@ export async function POST(req: NextRequest) {
     }
 
     const mediaUrl = `/api/media/generated/${post.calendar_id}/${fileName}`;
-    // Store the prompt that produced the image, refined or not, so the next regeneration starts there.
-    await pool.query('UPDATE posts SET media_url = $1, media_prompt = $2 WHERE id = $3 AND user_id = $4', [
-      mediaUrl,
-      prompt,
-      postId,
-      userId,
-    ]);
+    let s3Key: string | null = null;
+    let s3Url: string | null = null;
+    try {
+      const s3Res = await uploadLocalFileToS3({
+        filePath: outPath,
+        userId,
+        calendarId: String(post.calendar_id),
+        customFileName: fileName,
+      });
+      if (s3Res) {
+        s3Key = s3Res.key;
+        s3Url = s3Res.url;
+      }
+    } catch (s3Err: any) {
+      console.error('[S3] Failed to upload regenerated image to S3:', s3Err.message);
+    }
+
+    // Store the prompt that produced the image, refined or not, and S3 credentials
+    await pool.query(
+      'UPDATE posts SET media_url = $1, media_prompt = $2, s3_key = $3, s3_url = $4 WHERE id = $5 AND user_id = $6',
+      [mediaUrl, prompt, s3Key, s3Url, postId, userId]
+    );
     return NextResponse.json({
       success: true,
       target,
@@ -204,6 +220,8 @@ export async function POST(req: NextRequest) {
       source: parsed.source || null,
       references: mode === 'reference' ? referencePaths.length : 0,
       mediaUrl,
+      s3Key,
+      s3Url,
       width: parsed.width,
       height: parsed.height,
       bytes: parsed.bytes,

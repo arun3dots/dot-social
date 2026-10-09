@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import pool, { initPostgresTables } from '@/lib/postgres';
 import { currentUserId } from '@/lib/session';
+import { uploadLocalFileToS3 } from '@/lib/s3';
 
 // Formats LinkedIn, X and Instagram all accept (webp is not accepted by LinkedIn's Images API).
 const ACCEPTED: Record<string, string> = {
@@ -45,14 +46,40 @@ export async function POST(req: NextRequest) {
     const dir = path.join(process.cwd(), 'media', 'generated', String(calendarId));
     fs.mkdirSync(dir, { recursive: true });
     const fileName = `${calendarId}_uploaded_${Date.now().toString(36)}${ext}`;
-    fs.writeFileSync(path.join(dir, fileName), Buffer.from(await file.arrayBuffer()));
+    const localFilePath = path.join(dir, fileName);
+    fs.writeFileSync(localFilePath, Buffer.from(await file.arrayBuffer()));
 
     const mediaUrl = `/api/media/generated/${calendarId}/${fileName}`;
-    await pool.query('UPDATE posts SET media_url = $1 WHERE id = $2 AND user_id = $3', [mediaUrl, postId, userId]);
+    let s3Key: string | null = null;
+    let s3Url: string | null = null;
+    try {
+      const s3Res = await uploadLocalFileToS3({
+        filePath: localFilePath,
+        userId,
+        calendarId: String(calendarId),
+        customFileName: fileName,
+      });
+      if (s3Res) {
+        s3Key = s3Res.key;
+        s3Url = s3Res.url;
+      }
+    } catch (s3Err: any) {
+      console.error('[S3] Failed to upload user image to S3:', s3Err.message);
+    }
+
+    await pool.query('UPDATE posts SET media_url = $1, s3_key = $2, s3_url = $3 WHERE id = $4 AND user_id = $5', [
+      mediaUrl,
+      s3Key,
+      s3Url,
+      postId,
+      userId,
+    ]);
 
     return NextResponse.json({
       success: true,
       mediaUrl,
+      s3Key,
+      s3Url,
       bytes: file.size,
       contentType: file.type,
       originalName: file.name || null,

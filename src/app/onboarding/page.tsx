@@ -2,8 +2,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Sparkles, ArrowLeft, ArrowRight, Check } from 'lucide-react';
 
 type Step = 0 | 1 | 2 | 3 | 4 | 5;
+
 const STEP_TITLES = [
   'What should we call you?',
   'How do you sound?',
@@ -13,10 +15,19 @@ const STEP_TITLES = [
   'How much content at a time?',
 ];
 
+const STEP_DESCS = [
+  'This name appears in your studio and is used in generated content.',
+  'A short description of who you are and how you communicate. We will write in this voice.',
+  'Pick as many as you want. We can suggest the best fit for your profile.',
+  'Recurring themes your content will rotate through. Add your own too.',
+  'What the content is for — choose everything that applies.',
+  'Maximum one week per batch — you review it before it schedules.',
+];
+
 const CADENCE_OPTIONS = [
-  { id: 'daily', label: 'Daily', detail: '1 day of content per batch' },
-  { id: '3day', label: 'Every 3 days', detail: '3 days per batch' },
-  { id: 'weekly', label: 'Weekly', detail: '7 days per batch (maximum)' },
+  { id: 'daily',  label: 'Daily',          detail: '1 day of content per batch' },
+  { id: '3day',   label: 'Every 3 days',   detail: '3 days per batch' },
+  { id: 'weekly', label: 'Weekly',         detail: '7 days per batch (maximum)' },
 ];
 
 export default function OnboardingPage() {
@@ -103,159 +114,350 @@ export default function OnboardingPage() {
     }
   };
 
-  const chip = (active: boolean) =>
-    `px-3 py-1.5 rounded border text-xs font-mono transition-colors cursor-pointer ${
-      active
-        ? 'bg-cyan-950/60 border-cyan-500 text-cyan-200'
-        : 'bg-[#0b0e14] border-zinc-800 text-zinc-400 hover:border-zinc-600'
-    }`;
-
   if (loading) {
-    return <div className="min-h-screen bg-[#0a0c10] text-zinc-400 flex items-center justify-center font-mono text-sm">loading your profile…</div>;
+    return (
+      <div style={{
+        minHeight: '100vh', background: 'hsl(var(--bg-page))',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: 'hsl(var(--text-secondary))', fontSize: 13,
+      }}>
+        Loading your profile…
+      </div>
+    );
   }
 
+  /* ── Chip helper ──────────────────────────────────────────── */
+  const Chip = ({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) => (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5,
+        padding: '6px 12px', borderRadius: 20,
+        fontSize: 12, fontWeight: active ? 600 : 400,
+        border: `1.5px solid ${active ? 'hsl(221 83% 53%)' : 'hsl(var(--border-strong))'}`,
+        background: active ? 'hsl(221 83% 53% / .08)' : 'hsl(var(--bg-surface))',
+        color: active ? 'hsl(221 83% 45%)' : 'hsl(var(--text-secondary))',
+        cursor: 'pointer', transition: 'all 0.15s',
+        fontFamily: 'inherit',
+      }}
+    >
+      {active && <Check size={11} />}
+      {label}
+    </button>
+  );
+
   return (
-    <div className="min-h-screen bg-[#0a0c10] text-[#f1f5f9] p-6 flex flex-col">
-      <div className="max-w-3xl w-full mx-auto">
-        <div className="flex items-center justify-between py-4">
-          <div className="font-mono text-sm font-semibold text-zinc-300">social_engine <span className="text-zinc-600">//</span> <span className="text-cyan-400">onboarding</span></div>
-          <div className="font-mono text-xs text-zinc-500">step {step + 1} / 6</div>
+    <div style={{
+      minHeight: '100vh',
+      background: 'hsl(var(--bg-page))',
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center',
+      padding: '0 24px 40px',
+    }}>
+      {/* Top bar */}
+      <div style={{
+        width: '100%', maxWidth: 680,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '20px 0',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            width: 30, height: 30, borderRadius: 8,
+            background: 'hsl(var(--accent))',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Sparkles size={14} color="white" />
+          </div>
+          <span style={{ fontSize: 14, fontWeight: 700, color: 'hsl(var(--text-primary))' }}>dot.social</span>
         </div>
+        <span style={{ fontSize: 12, color: 'hsl(var(--text-tertiary))' }}>
+          Step {step + 1} of 6
+        </span>
+      </div>
 
-        <div className="flex gap-1 mb-8">
-          {STEP_TITLES.map((_, i) => (
-            <div key={i} className={`h-1 flex-1 rounded ${i <= step ? 'bg-cyan-500' : 'bg-zinc-800'}`} />
-          ))}
-        </div>
+      {/* Progress bar */}
+      <div style={{
+        width: '100%', maxWidth: 680,
+        display: 'flex', gap: 4, marginBottom: 32,
+      }}>
+        {STEP_TITLES.map((_, i) => (
+          <div key={i} style={{
+            flex: 1, height: 4, borderRadius: 2,
+            background: i <= step ? 'hsl(var(--accent))' : 'hsl(var(--border))',
+            transition: 'background 0.3s',
+          }} />
+        ))}
+      </div>
 
-        <div className="bg-[#11141c] border border-zinc-800 rounded-lg p-8">
-          <h1 className="text-lg font-bold text-white mb-1">{STEP_TITLES[step]}</h1>
-          <p className="text-xs text-zinc-400 mb-6">
-            {step === 0 && 'This is the name shown in your studio and used in generated content.'}
-            {step === 1 && 'A short description of who you are and how you sound. We will write in this voice.'}
-            {step === 2 && 'Pick as many as you want. We can suggest the best fit for you.'}
-            {step === 3 && 'Recurring themes your content will rotate through. Add your own too.'}
-            {step === 4 && 'What the content is for. Choose everything that applies.'}
-            {step === 5 && 'Maximum one week per batch — you review it, then it schedules.'}
-          </p>
+      {/* Main card */}
+      <div style={{
+        width: '100%', maxWidth: 680,
+        background: 'hsl(var(--bg-surface))',
+        border: '1px solid hsl(var(--border))',
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-md)',
+        padding: '32px',
+      }}>
+        <h1 style={{
+          fontSize: 20, fontWeight: 800, color: 'hsl(var(--text-primary))',
+          letterSpacing: '-0.03em', marginBottom: 6,
+        }}>
+          {STEP_TITLES[step]}
+        </h1>
+        <p style={{ fontSize: 13, color: 'hsl(var(--text-secondary))', marginBottom: 24 }}>
+          {STEP_DESCS[step]}
+        </p>
 
-          {error && <div className="mb-5 p-3 rounded bg-rose-950/50 border border-rose-800/60 text-rose-300 text-xs font-mono">{error}</div>}
+        {/* Error */}
+        {error && (
+          <div style={{
+            padding: '10px 14px', marginBottom: 16,
+            borderRadius: 'var(--radius-sm)',
+            background: 'hsl(0 72% 51% / .08)',
+            border: '1px solid hsl(0 72% 51% / .25)',
+            color: 'hsl(0 72% 45%)', fontSize: 12,
+          }}>
+            {error}
+          </div>
+        )}
 
-          {step === 0 && (
-            <input value={screenName} onChange={(e) => setScreenName(e.target.value)} placeholder="e.g. Sobin, or @growthops"
-              className="w-full bg-[#07080b] border border-zinc-800 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-cyan-500" />
-          )}
+        {/* ── Step 0: Screen name ──────────────────────────── */}
+        {step === 0 && (
+          <input
+            className="input"
+            value={screenName}
+            onChange={(e) => setScreenName(e.target.value)}
+            placeholder="e.g. Sobin, or @growthops"
+            autoFocus
+          />
+        )}
 
-          {step === 1 && (
-            <textarea value={persona} onChange={(e) => setPersona(e.target.value)} rows={4}
-              placeholder="e.g. Director of Engineering sharing what actually works when automating delivery pipelines. Blunt, practical, no hype."
-              className="w-full bg-[#07080b] border border-zinc-800 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-cyan-500" />
-          )}
+        {/* ── Step 1: Persona ──────────────────────────────── */}
+        {step === 1 && (
+          <textarea
+            className="textarea-input"
+            style={{ minHeight: 100, resize: 'vertical' }}
+            value={persona}
+            onChange={(e) => setPersona(e.target.value)}
+            rows={4}
+            placeholder="e.g. Director of Engineering sharing what actually works when automating delivery pipelines. Blunt, practical, no hype."
+          />
+        )}
 
-          {step === 2 && (
-            <div className="space-y-4">
-              <button onClick={suggest} disabled={suggesting}
-                className="text-xs font-mono px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-black font-semibold">
-                {suggesting ? 'thinking…' : 'Suggest the best fit for me'}
+        {/* ── Step 2: Niches ───────────────────────────────── */}
+        {step === 2 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <button
+              onClick={suggest}
+              disabled={suggesting}
+              className="btn btn-primary btn-sm"
+              style={{ alignSelf: 'flex-start' }}
+            >
+              <Sparkles size={12} />
+              {suggesting ? 'Thinking…' : 'Suggest niches for me'}
+            </button>
+
+            {suggestedNiches.length > 0 && (
+              <div>
+                <p className="label" style={{ marginBottom: 8 }}>Suggested for you</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {suggestedNiches.map((n) => (
+                    <Chip key={n} label={n} active={niches.includes(n)} onClick={() => toggle(niches, setNiches, n)} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <p className="label" style={{ marginBottom: 8 }}>Selected ({niches.length})</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 28 }}>
+                {niches.length === 0
+                  ? <span style={{ fontSize: 12, color: 'hsl(var(--text-tertiary))' }}>Nothing selected yet</span>
+                  : niches.map((n) => (
+                    <Chip key={n} label={`${n} ✕`} active={true} onClick={() => toggle(niches, setNiches, n)} />
+                  ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                className="input"
+                style={{ flex: 1 }}
+                value={customNiche}
+                onChange={(e) => setCustomNiche(e.target.value)}
+                placeholder="Add your own niche…"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const v = customNiche.trim();
+                    if (v) { toggle(niches, setNiches, v); setCustomNiche(''); }
+                  }
+                }}
+              />
+              <button
+                onClick={() => { const v = customNiche.trim(); if (v) { toggle(niches, setNiches, v); setCustomNiche(''); } }}
+                className="btn btn-secondary"
+              >
+                Add
               </button>
-              {suggestedNiches.length > 0 && (
-                <div>
-                  <div className="text-xs font-mono text-zinc-500 mb-2">SUGGESTED FOR YOU</div>
-                  <div className="flex flex-wrap gap-2">
-                    {suggestedNiches.map((n) => <span key={n} className={chip(niches.includes(n))} onClick={() => toggle(niches, setNiches, n)}>{n}</span>)}
-                  </div>
-                </div>
-              )}
-              <div>
-                <div className="text-xs font-mono text-zinc-500 mb-2">SELECTED ({niches.length})</div>
-                <div className="flex flex-wrap gap-2">
-                  {niches.length === 0 && <span className="text-xs text-zinc-600 font-mono">nothing selected yet</span>}
-                  {niches.map((n) => <span key={n} className={chip(true)} onClick={() => toggle(niches, setNiches, n)}>{n} ✕</span>)}
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <input value={customNiche} onChange={(e) => setCustomNiche(e.target.value)} placeholder="add your own niche"
-                  className="flex-1 bg-[#07080b] border border-zinc-800 rounded px-3 py-2 text-xs font-mono focus:outline-none focus:border-cyan-500" />
-                <button onClick={() => { const v = customNiche.trim(); if (v) { toggle(niches, setNiches, v); setCustomNiche(''); } }}
-                  className="px-3 py-2 rounded border border-zinc-700 text-xs font-mono text-zinc-300">Add</button>
-              </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {step === 3 && (
-            <div className="space-y-4">
-              {suggestedPillars.length === 0 && (
-                <button onClick={suggest} disabled={suggesting} className="text-xs font-mono px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-black font-semibold">
-                  {suggesting ? 'thinking…' : 'Suggest pillars for my niches'}
-                </button>
-              )}
-              {suggestedPillars.length > 0 && (
-                <div>
-                  <div className="text-xs font-mono text-zinc-500 mb-2">SUGGESTED</div>
-                  <div className="flex flex-wrap gap-2">
-                    {suggestedPillars.map((p) => <span key={p} className={chip(pillars.includes(p))} onClick={() => toggle(pillars, setPillars, p)}>{p}</span>)}
-                  </div>
-                </div>
-              )}
-              <div>
-                <div className="text-xs font-mono text-zinc-500 mb-2">SELECTED ({pillars.length})</div>
-                <div className="flex flex-wrap gap-2">
-                  {pillars.length === 0 && <span className="text-xs text-zinc-600 font-mono">nothing selected yet</span>}
-                  {pillars.map((p) => <span key={p} className={chip(true)} onClick={() => toggle(pillars, setPillars, p)}>{p} ✕</span>)}
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <input value={customPillar} onChange={(e) => setCustomPillar(e.target.value)} placeholder="add your own pillar"
-                  className="flex-1 bg-[#07080b] border border-zinc-800 rounded px-3 py-2 text-xs font-mono focus:outline-none focus:border-cyan-500" />
-                <button onClick={() => { const v = customPillar.trim(); if (v) { toggle(pillars, setPillars, v); setCustomPillar(''); } }}
-                  className="px-3 py-2 rounded border border-zinc-700 text-xs font-mono text-zinc-300">Add</button>
-              </div>
-            </div>
-          )}
-
-          {step === 4 && (
-            <div className="space-y-4">
-              {(allGoals.length ? allGoals : [
-                'Followers / audience growth','Engagement','Authority / thought leadership','Leads / demand generation',
-                'Sales / conversions','Website traffic','Community building','Loyalty / retention',
-                'Brand awareness / recall','Hiring / employer brand',
-              ]).map((g) => <span key={g} className={`${chip(goals.includes(g))} mr-2 mb-2 inline-block`} onClick={() => toggle(goals, setGoals, g)}>{g}</span>)}
-              <div className="text-xs font-mono text-zinc-500 pt-2">SELECTED ({goals.length})</div>
-            </div>
-          )}
-
-          {step === 5 && (
-            <div className="space-y-3">
-              {CADENCE_OPTIONS.map((o) => (
-                <div key={o.id} onClick={() => setCadence(o.id)}
-                  className={`p-3 rounded border cursor-pointer ${cadence === o.id ? 'border-cyan-500 bg-cyan-950/30' : 'border-zinc-800 bg-[#0b0e14]'}`}>
-                  <div className="text-sm font-semibold text-zinc-100">{o.label}</div>
-                  <div className="text-xs text-zinc-400 font-mono">{o.detail}</div>
-                </div>
-              ))}
-              <div className="mt-6 p-4 rounded border border-zinc-800 bg-[#0b0e14] text-xs font-mono text-zinc-400 space-y-1">
-                <div>screen name: <span className="text-zinc-200">{screenName || '—'}</span></div>
-                <div>niches: <span className="text-zinc-200">{niches.join(', ') || '—'}</span></div>
-                <div>pillars: <span className="text-zinc-200">{pillars.join(', ') || '—'}</span></div>
-                <div>goals: <span className="text-zinc-200">{goals.join(', ') || '—'}</span></div>
-                <div>cadence: <span className="text-cyan-300">{cadence}</span></div>
-              </div>
-            </div>
-          )}
-
-          <div className="flex justify-between mt-8">
-            <button onClick={() => setStep((s) => Math.max(0, s - 1) as Step)} disabled={step === 0}
-              className="px-4 py-2 rounded border border-zinc-800 text-xs font-mono text-zinc-400 disabled:opacity-40">Back</button>
-            {step < 5 ? (
-              <button onClick={() => setStep((s) => Math.min(5, s + 1) as Step)} disabled={!canAdvance()}
-                className="px-4 py-2 rounded bg-cyan-600 hover:bg-cyan-500 text-black text-xs font-mono font-semibold disabled:opacity-40">Continue</button>
-            ) : (
-              <button onClick={finish} disabled={saving}
-                className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-black text-xs font-mono font-semibold disabled:opacity-40">
-                {saving ? 'saving…' : 'Finish setup'}
+        {/* ── Step 3: Pillars ──────────────────────────────── */}
+        {step === 3 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {suggestedPillars.length === 0 && (
+              <button onClick={suggest} disabled={suggesting} className="btn btn-primary btn-sm" style={{ alignSelf: 'flex-start' }}>
+                <Sparkles size={12} />
+                {suggesting ? 'Thinking…' : 'Suggest pillars for my niches'}
               </button>
             )}
+            {suggestedPillars.length > 0 && (
+              <div>
+                <p className="label" style={{ marginBottom: 8 }}>Suggested</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {suggestedPillars.map((p) => (
+                    <Chip key={p} label={p} active={pillars.includes(p)} onClick={() => toggle(pillars, setPillars, p)} />
+                  ))}
+                </div>
+              </div>
+            )}
+            <div>
+              <p className="label" style={{ marginBottom: 8 }}>Selected ({pillars.length})</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 28 }}>
+                {pillars.length === 0
+                  ? <span style={{ fontSize: 12, color: 'hsl(var(--text-tertiary))' }}>Nothing selected yet</span>
+                  : pillars.map((p) => (
+                    <Chip key={p} label={`${p} ✕`} active={true} onClick={() => toggle(pillars, setPillars, p)} />
+                  ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                className="input"
+                style={{ flex: 1 }}
+                value={customPillar}
+                onChange={(e) => setCustomPillar(e.target.value)}
+                placeholder="Add your own pillar…"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const v = customPillar.trim();
+                    if (v) { toggle(pillars, setPillars, v); setCustomPillar(''); }
+                  }
+                }}
+              />
+              <button onClick={() => { const v = customPillar.trim(); if (v) { toggle(pillars, setPillars, v); setCustomPillar(''); } }} className="btn btn-secondary">
+                Add
+              </button>
+            </div>
           </div>
+        )}
+
+        {/* ── Step 4: Goals ────────────────────────────────── */}
+        {step === 4 && (
+          <div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+              {(allGoals.length ? allGoals : [
+                'Followers / audience growth', 'Engagement', 'Authority / thought leadership',
+                'Leads / demand generation', 'Sales / conversions', 'Website traffic',
+                'Community building', 'Loyalty / retention', 'Brand awareness / recall', 'Hiring / employer brand',
+              ]).map((g) => (
+                <Chip key={g} label={g} active={goals.includes(g)} onClick={() => toggle(goals, setGoals, g)} />
+              ))}
+            </div>
+            <p className="label">Selected ({goals.length})</p>
+          </div>
+        )}
+
+        {/* ── Step 5: Cadence ──────────────────────────────── */}
+        {step === 5 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {CADENCE_OPTIONS.map((o) => (
+              <div
+                key={o.id}
+                onClick={() => setCadence(o.id)}
+                style={{
+                  padding: '14px 16px', borderRadius: 'var(--radius-sm)',
+                  border: `1.5px solid ${cadence === o.id ? 'hsl(221 83% 53%)' : 'hsl(var(--border))'}`,
+                  background: cadence === o.id ? 'hsl(221 83% 53% / .06)' : 'hsl(var(--bg-surface))',
+                  cursor: 'pointer', transition: 'all 0.15s',
+                  display: 'flex', alignItems: 'center', gap: 12,
+                }}
+              >
+                <div style={{
+                  width: 18, height: 18, borderRadius: '50%',
+                  border: `2px solid ${cadence === o.id ? 'hsl(221 83% 53%)' : 'hsl(var(--border-strong))'}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  {cadence === o.id && (
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'hsl(221 83% 53%)' }} />
+                  )}
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'hsl(var(--text-primary))', marginBottom: 2 }}>
+                    {o.label}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'hsl(var(--text-tertiary))' }}>{o.detail}</div>
+                </div>
+              </div>
+            ))}
+
+            {/* Summary */}
+            <div style={{
+              marginTop: 8, padding: '14px 16px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'hsl(var(--bg-surface-2))',
+              border: '1px solid hsl(var(--border))',
+              display: 'flex', flexDirection: 'column', gap: 5,
+            }}>
+              {[
+                ['Name', screenName || '—'],
+                ['Niches', niches.join(', ') || '—'],
+                ['Pillars', pillars.join(', ') || '—'],
+                ['Goals', goals.join(', ') || '—'],
+                ['Cadence', cadence],
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', gap: 8, fontSize: 12 }}>
+                  <span style={{ color: 'hsl(var(--text-tertiary))', width: 60, flexShrink: 0 }}>{k}:</span>
+                  <span style={{ color: 'hsl(var(--text-primary))' }}>{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Navigation buttons */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 28 }}>
+          <button
+            onClick={() => setStep((s) => Math.max(0, s - 1) as Step)}
+            disabled={step === 0}
+            className="btn btn-secondary"
+          >
+            <ArrowLeft size={13} />
+            Back
+          </button>
+
+          {step < 5 ? (
+            <button
+              onClick={() => setStep((s) => Math.min(5, s + 1) as Step)}
+              disabled={!canAdvance()}
+              className="btn btn-primary"
+            >
+              Continue
+              <ArrowRight size={13} />
+            </button>
+          ) : (
+            <button
+              onClick={finish}
+              disabled={saving}
+              className="btn btn-success"
+              style={{ background: 'hsl(142 71% 45%)', color: 'white', border: 'none' }}
+            >
+              {saving ? 'Saving…' : 'Finish setup'}
+              {!saving && <Check size={13} />}
+            </button>
+          )}
         </div>
       </div>
     </div>

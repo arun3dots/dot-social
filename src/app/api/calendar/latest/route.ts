@@ -31,7 +31,7 @@ export async function GET() {
     // made an approval look lost after a reload. So overlay every post from its row.
     const rows = await pool.query(
       `SELECT id, day_index, platform, content, media_prompt, media_url, reference_urls, scheduled_time, status,
-              external_url, published_at, tagged_users, manual_published_at, manual_external_url
+              external_url, published_at, tagged_users, manual_published_at, manual_external_url, s3_key, s3_url
          FROM posts WHERE calendar_id = $1
         ORDER BY day_index ASC, platform ASC`,
       [r.id]
@@ -55,6 +55,8 @@ export async function GET() {
         taggedUsers: Array.isArray(row.tagged_users) ? row.tagged_users : [],
         manualExternalUrl: row.manual_external_url || undefined,
         manualPublishedAt: row.manual_published_at || undefined,
+        s3Key: row.s3_key || null,
+        s3Url: row.s3_url || null,
       });
     }
 

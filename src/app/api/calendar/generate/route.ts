@@ -6,6 +6,7 @@ import pool, { initPostgresTables } from '@/lib/postgres';
 import { currentUserId } from '@/lib/session';
 import { clampHorizon, daysForCadence } from '@/lib/cadence';
 import { localWallTimeToUtc, userTimezone } from '@/lib/schedule';
+import { uploadLocalFileToS3 } from '@/lib/s3';
 
 const MAX_HORIZON_DAYS = 7; // hard cap: never generate a month in one stretch
 
@@ -170,6 +171,35 @@ export async function POST(req: NextRequest) {
         p.id = `post_${calendarId}_${d.dayIndex}_${String(p.platform).toLowerCase()}`;
       }
     }
+
+    // ---- S3 Cloud Storage Integration ----
+    // Upload all generated images to S3 bucket grouped by userId: <userId>/<calendarId>/<fileName>
+    for (const d of days) {
+      for (const p of (d.posts || [])) {
+        if (p.mediaUrl && typeof p.mediaUrl === 'string' && p.mediaUrl.startsWith('/api/media/generated/')) {
+          const parts = p.mediaUrl.split('/');
+          const fileName = parts[parts.length - 1];
+          const localFilePath = path.join(process.cwd(), 'media', 'generated', calendarId, fileName);
+          if (fs.existsSync(localFilePath)) {
+            try {
+              const uploadRes = await uploadLocalFileToS3({
+                filePath: localFilePath,
+                userId,
+                calendarId,
+                customFileName: fileName,
+              });
+              if (uploadRes) {
+                p.s3Key = uploadRes.key;
+                p.s3Url = uploadRes.url;
+              }
+            } catch (err: any) {
+              console.error(`[S3 Upload Error] Failed to upload ${fileName} to S3:`, err.message);
+            }
+          }
+        }
+      }
+    }
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -192,8 +222,8 @@ export async function POST(req: NextRequest) {
       for (const d of days) {
         for (const p of (d.posts || [])) {
           await client.query(
-            `INSERT INTO posts (id, calendar_id, user_id, day_index, platform, content, media_prompt, media_url, scheduled_time, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            `INSERT INTO posts (id, calendar_id, user_id, day_index, platform, content, media_prompt, media_url, scheduled_time, status, s3_key, s3_url)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
              ON CONFLICT (id) DO NOTHING`,
             [
               p.id,
@@ -206,6 +236,8 @@ export async function POST(req: NextRequest) {
               p.mediaUrl ?? null,
               p.scheduledTime ?? null,
               p.status || 'PENDING_APPROVAL',
+              p.s3Key ?? null,
+              p.s3Url ?? null,
             ]
           );
         }

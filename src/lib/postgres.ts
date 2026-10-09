@@ -142,6 +142,9 @@ export async function initPostgresTables() {
     // The user's own INPUT image(s) for this post's image (JSON array of /api/media/... urls). When present
     // the image model generates the postable image FROM these instead of from a text prompt alone.
     await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS reference_urls JSONB DEFAULT '[]'::jsonb;`);
+    // S3 Cloud Storage metadata (grouped by user: <userId>/<calendarId>/<fileName>)
+    await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS s3_key TEXT;`);
+    await client.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS s3_url TEXT;`);
 
     await client.query(`CREATE INDEX IF NOT EXISTS idx_posts_user ON posts(user_id);`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_posts_calendar ON posts(calendar_id);`);

@@ -38,6 +38,31 @@ export async function GET(_req: NextRequest, { params }: { params: { path: strin
     return NextResponse.json({ error: 'Invalid path' }, { status: 400 });
   }
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+    // S3 Fallback: fetch from S3 grouped by userId if missing on local disk
+    try {
+      const fileName = parts.slice(2).join('/');
+      const { buildUserS3Key, downloadS3ObjectToBuffer } = await import('@/lib/s3');
+      const s3Key = buildUserS3Key(userId, calendarId, fileName);
+      const s3Obj = await downloadS3ObjectToBuffer(s3Key);
+      if (s3Obj && s3Obj.buffer) {
+        // Cache to local disk for fast subsequent access
+        try {
+          fs.mkdirSync(path.dirname(resolved), { recursive: true });
+          fs.writeFileSync(resolved, s3Obj.buffer);
+        } catch {}
+
+        return new NextResponse(new Uint8Array(s3Obj.buffer), {
+          headers: {
+            'Content-Type': s3Obj.contentType || 'image/png',
+            'Content-Length': String(s3Obj.buffer.length),
+            'Cache-Control': 'private, max-age=3600',
+          },
+        });
+      }
+    } catch (e: any) {
+      console.error('[Media Route] S3 download error:', e.message);
+    }
+
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
