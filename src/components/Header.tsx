@@ -16,6 +16,11 @@ import {
   LogOut,
   Menu,
   MessageSquare,
+  PanelLeft,
+  PanelLeftClose,
+  PanelRight,
+  PanelRightClose,
+  Cpu,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -28,6 +33,10 @@ interface HeaderProps {
   onGoLive?: () => void;
   onSelectView?: (view: 'canvas' | 'board' | 'calendar') => void;
   onOpenLlmModal?: () => void;
+  isLeftDrawerOpen?: boolean;
+  onToggleLeftDrawer?: () => void;
+  isRightDrawerOpen?: boolean;
+  onToggleRightDrawer?: () => void;
   onToggleMobileTools?: () => void;
   onToggleMobileCommunity?: () => void;
   isGenerating?: boolean;
@@ -43,6 +52,10 @@ export default function Header({
   onGoLive,
   onSelectView,
   onOpenLlmModal,
+  isLeftDrawerOpen = true,
+  onToggleLeftDrawer,
+  isRightDrawerOpen = true,
+  onToggleRightDrawer,
   onToggleMobileTools,
   onToggleMobileCommunity,
   isGenerating = false,
@@ -66,8 +79,21 @@ export default function Header({
     <header className="h-[56px] sm:h-[60px] bg-white text-slate-900 px-3 sm:px-6 flex items-center justify-between border-b border-slate-200/90 shadow-2xs select-none shrink-0 z-30">
       {/* ── Left side: Logo, Breadcrumbs & Flow Status (ManyChat Style) ─ */}
       <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
-        {/* Mobile Tools Menu Toggle */}
-        {onToggleMobileTools && (
+        {/* Left Drawer Toggle (Desktop & Mobile) */}
+        {onToggleLeftDrawer ? (
+          <button
+            type="button"
+            onClick={onToggleLeftDrawer}
+            className={`p-1.5 rounded-xl border transition-all ${
+              isLeftDrawerOpen
+                ? 'bg-slate-100 text-slate-800 border-slate-200 shadow-2xs'
+                : 'bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-900 border-slate-200'
+            }`}
+            title={isLeftDrawerOpen ? 'Hide left tools drawer' : 'Show left tools drawer'}
+          >
+            {isLeftDrawerOpen ? <PanelLeftClose size={18} /> : <PanelLeft size={18} />}
+          </button>
+        ) : onToggleMobileTools ? (
           <button
             type="button"
             onClick={onToggleMobileTools}
@@ -76,7 +102,7 @@ export default function Header({
           >
             <Menu size={18} />
           </button>
-        )}
+        ) : null}
 
         {/* App Logo */}
         <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center text-white shadow-xs shrink-0">
@@ -142,8 +168,27 @@ export default function Header({
           )}
         </button>
 
-        {/* Mobile Community Sheet Toggle */}
-        {onToggleMobileCommunity && (
+        {/* Right Drawer (AI Agent / Telemetry) Toggle (Desktop & Mobile) */}
+        {onToggleRightDrawer ? (
+          <button
+            type="button"
+            onClick={onToggleRightDrawer}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:py-2 rounded-xl border text-xs font-semibold transition-all ${
+              isRightDrawerOpen
+                ? 'bg-sky-50 text-sky-700 border-sky-200 shadow-2xs'
+                : 'bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 border-slate-200'
+            }`}
+            title={isRightDrawerOpen ? 'Hide AI Agent' : 'Show AI Agent'}
+          >
+            <Bot size={15} className={isRightDrawerOpen ? 'text-sky-600' : 'text-slate-500'} />
+            <span className="hidden sm:inline">AI Agent</span>
+            {isRightDrawerOpen ? (
+              <PanelRightClose size={14} className="hidden sm:inline text-sky-500" />
+            ) : (
+              <PanelRight size={14} className="hidden sm:inline text-slate-400" />
+            )}
+          </button>
+        ) : onToggleMobileCommunity ? (
           <button
             type="button"
             onClick={onToggleMobileCommunity}
@@ -153,7 +198,7 @@ export default function Header({
             <MessageSquare size={17} />
             <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-sky-500" />
           </button>
-        )}
+        ) : null}
 
         {/* Action icons (desktop & tablet) */}
         <div className="hidden sm:flex items-center gap-1 text-slate-500 border-l border-slate-200 pl-2 sm:pl-3">
@@ -177,7 +222,7 @@ export default function Header({
             }`}
             title="AI Model & Engine Settings"
           >
-            <Bot size={15} />
+            <Cpu size={15} />
           </button>
 
           {/* Notifications / Published stream */}

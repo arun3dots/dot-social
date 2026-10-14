@@ -20,6 +20,7 @@ export interface UserSession {
   role: UserRole;
   avatar: string;
   subscription?: SubscriptionInfo;
+  screenName?: string;
 }
 
 export type Platform = 'TWITTER' | 'LINKEDIN' | 'INSTAGRAM';

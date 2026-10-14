@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ContentCalendar, PostItem, Platform, SocialConnection } from '@/types';
+import { ContentCalendar, PostItem, Platform, SocialConnection, UserSession } from '@/types';
 import PostEditorModal from '@/components/PostEditorModal';
 import DispatchConfirmDialog from '@/components/DispatchConfirmDialog';
 import {
@@ -22,8 +22,11 @@ interface Props {
   onApproveBatch: () => void;
   onPublishSinglePost: (post: PostItem, opts: { keepScheduled: boolean }) => Promise<void>;
   onPublishDay: (dayIndex: number, date: string) => void;
+  onDuplicatePost?: (sourcePost: PostItem, targetDate: string, targetTime: string, autoSchedule: boolean) => Promise<void>;
+  availableImages?: string[];
   publishingId: string | null;
   llm?: { provider?: string; apiKey?: string; imageApiKey?: string; imageQuality?: string };
+  user?: UserSession;
   connections?: SocialConnection[];
   platformStatus?: { platform: string; configured: boolean; requiredEnv: string }[];
 }
@@ -70,8 +73,11 @@ export default function CalendarReviewBoard({
   onApproveBatch,
   onPublishSinglePost,
   onPublishDay,
+  onDuplicatePost,
+  availableImages,
   publishingId,
   llm,
+  user,
   connections = [],
   platformStatus = [],
 }: Props) {
@@ -312,7 +318,10 @@ export default function CalendarReviewBoard({
           post={editor.post}
           group={siblingsForDay(editor.dayIndex)}
           dayIndex={editor.dayIndex}
+          availableImages={availableImages}
+          onDuplicatePost={onDuplicatePost}
           llm={llm}
+          user={user}
           onSave={onUpdatePost}
           onClose={() => setEditor(null)}
           onApprovePost={(p) => onUpdatePost(editor.dayIndex, p.id, { status: 'APPROVED' })}

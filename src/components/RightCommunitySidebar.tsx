@@ -24,6 +24,7 @@ import {
   GripVertical,
   Activity,
   AlertCircle,
+  PanelRightClose,
 } from 'lucide-react';
 import { ContentCalendar, SocialConnection, PostItem } from '@/types';
 import { PlatformStatus } from '@/components/SocialAccountsCard';
@@ -48,6 +49,8 @@ interface ChatMessage {
 }
 
 interface Props {
+  isDesktopOpen?: boolean;
+  onToggleDesktop?: () => void;
   isMobileOpen?: boolean;
   onCloseMobile?: () => void;
   calendar?: ContentCalendar | null;
@@ -61,6 +64,8 @@ interface Props {
 }
 
 export default function RightCommunitySidebar({
+  isDesktopOpen = true,
+  onToggleDesktop,
   isMobileOpen = false,
   onCloseMobile,
   calendar,
@@ -557,7 +562,7 @@ I can execute live actions or check process statuses for you:
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <h3 className="font-bold text-xs text-slate-800">AI Process Copilot</h3>
+              <h3 className="font-bold text-xs text-slate-800">AI Agent</h3>
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="System Online" />
             </div>
             <p className="text-[10px] text-slate-400 font-medium">
@@ -567,7 +572,7 @@ I can execute live actions or check process statuses for you:
         </div>
 
         <div className="flex items-center gap-1 text-slate-400">
-          {/* Expand / Minimize toggle button */}
+          {/* Expand / Minimize width toggle button */}
           <button
             type="button"
             onClick={toggleExpand}
@@ -587,17 +592,21 @@ I can execute live actions or check process statuses for you:
             <RotateCcw size={14} />
           </button>
 
-          {/* Close button on mobile */}
-          {onCloseMobile && (
-            <button
-              type="button"
-              onClick={onCloseMobile}
-              className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-              title="Close drawer"
-            >
-              <X size={15} />
-            </button>
-          )}
+          {/* Toggle to Hide AI Agent (Universal Desktop & Mobile) */}
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                onCloseMobile?.();
+              } else {
+                onToggleDesktop?.();
+              }
+            }}
+            className="p-1.5 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-700"
+            title="Hide AI Agent"
+          >
+            <PanelRightClose size={15} />
+          </button>
         </div>
       </div>
 
@@ -840,9 +849,11 @@ I can execute live actions or check process statuses for you:
   return (
     <>
       {/* Desktop permanent resizable sidebar */}
-      <div className="hidden lg:flex h-full shrink-0">
-        {sidebarContent}
-      </div>
+      {isDesktopOpen && (
+        <div className="hidden lg:flex h-full shrink-0 animate-in slide-in-from-right duration-150">
+          {sidebarContent}
+        </div>
+      )}
 
       {/* Mobile slide-over drawer */}
       {isMobileOpen && (

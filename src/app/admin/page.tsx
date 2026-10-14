@@ -57,18 +57,18 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#07090e] text-[#f1f5f9] flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
       {/* Super Admin Dedicated Header */}
-      <header className="flex items-center justify-between px-6 py-3.5 bg-[#0b0e14]/95 border-b border-rose-950/40 sticky top-0 z-50 backdrop-blur-md">
+      <header className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2.5 font-mono text-sm font-semibold tracking-tight">
-            <Terminal size={18} className="text-rose-400" />
-            <span className="text-white font-bold">social_engine</span>
-            <span className="text-zinc-600">//</span>
-            <span className="text-rose-400 font-mono text-xs">SUPER_ADMIN_PLANE</span>
+            <Terminal size={18} className="text-rose-600" />
+            <span className="text-slate-900 font-bold">social_engine</span>
+            <span className="text-slate-300">//</span>
+            <span className="text-rose-600 font-mono text-xs font-semibold">SUPER_ADMIN_PLANE</span>
           </div>
 
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-mono bg-rose-950/30 text-rose-400 border border-rose-900/50">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-rose-50 text-rose-700 border border-rose-200">
             <Shield size={12} />
             RESTRICTED_ACCESS
           </span>
@@ -76,17 +76,17 @@ export default function AdminPage() {
 
         <div className="flex items-center gap-4">
           <div className="text-right">
-            <div className="text-xs font-semibold text-zinc-100 font-mono">
+            <div className="text-xs font-semibold text-slate-800 font-mono">
               Super Admin Master
             </div>
-            <div className="text-[11px] text-rose-400 font-mono">
+            <div className="text-[11px] text-rose-600 font-mono font-medium">
               admin@antigravity.local
             </div>
           </div>
 
           <button
             onClick={handleLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-mono text-xs transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-mono text-xs shadow-sm transition-colors"
             title="Log out of Super Admin"
           >
             <LogOut size={13} />
@@ -98,20 +98,20 @@ export default function AdminPage() {
       {/* Main Admin Content */}
       <main className="max-w-7xl mx-auto w-full p-6 flex flex-col gap-6">
         {/* Banner */}
-        <div className="bg-[#0e121a] border border-zinc-800 rounded-lg p-5 shadow-xl border-l-4 border-l-rose-500 flex justify-between items-center">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm border-l-4 border-l-rose-500 flex justify-between items-center">
           <div>
-            <h1 className="text-base font-semibold tracking-tight text-zinc-100 flex items-center gap-2 mb-1">
-              <Shield size={18} className="text-rose-400" />
+            <h1 className="text-base font-semibold tracking-tight text-slate-900 flex items-center gap-2 mb-1">
+              <Shield size={18} className="text-rose-600" />
               Platform Infrastructure & Multi-Tenant Control
             </h1>
-            <p className="text-xs text-zinc-400">
+            <p className="text-xs text-slate-500">
               PostgreSQL database status: connected • Auto-scheduling cron workers: active • Global rate limits: normal.
             </p>
           </div>
           <button
             onClick={fetchDiagnostics}
             disabled={loading}
-            className="flex items-center gap-2 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 font-mono text-xs transition-colors"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-mono text-xs shadow-sm transition-colors"
           >
             <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
             <span>Refresh Diagnostics</span>
@@ -119,87 +119,87 @@ export default function AdminPage() {
         </div>
 
         {/* Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-[#0e121a] border border-zinc-800 rounded-lg p-5 shadow-xl">
-            <div className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider mb-2">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
               Registered Creators (PostgreSQL)
             </div>
-            <div className="text-2xl font-bold font-mono text-zinc-100 mb-1">
+            <div className="text-3xl font-bold text-slate-900 mb-1">
               {users.length} Active Tenants
             </div>
-            <div className="text-[11px] text-emerald-400 font-mono">
+            <div className="text-xs text-emerald-600 font-medium">
               Database schema synchronized
             </div>
           </div>
 
-          <div className="bg-[#0e121a] border border-zinc-800 rounded-lg p-5 shadow-xl">
-            <div className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider mb-2">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
               Primary System LLM
             </div>
-            <div className="text-2xl font-bold font-mono text-cyan-400 mb-1">
+            <div className="text-3xl font-bold text-blue-600 mb-1">
               Gemini 1.5 Flash
             </div>
-            <div className="text-[11px] text-zinc-400 font-mono">
+            <div className="text-xs text-slate-500">
               Backups: OpenAI & DeepSeek
             </div>
           </div>
 
-          <div className="bg-[#0e121a] border border-zinc-800 rounded-lg p-5 shadow-xl">
-            <div className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider mb-2">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
               Total Dispatched Posts
             </div>
-            <div className="text-2xl font-bold font-mono text-emerald-400 mb-1">
+            <div className="text-3xl font-bold text-emerald-600 mb-1">
               {logs.length} Logged
             </div>
-            <div className="text-[11px] text-emerald-400 font-mono">
+            <div className="text-xs text-emerald-600 font-medium">
               PostgreSQL audit trail verified
             </div>
           </div>
         </div>
 
         {/* Global LLM Provider Quotas */}
-        <div className="bg-[#0e121a] border border-zinc-800 rounded-lg p-5 shadow-xl">
-          <h2 className="text-sm font-semibold tracking-tight text-zinc-100 flex items-center gap-2 mb-1">
-            <Key size={16} className="text-cyan-400" />
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <h2 className="text-base font-semibold tracking-tight text-slate-900 flex items-center gap-2 mb-1">
+            <Key size={16} className="text-blue-600" />
             System Default LLM Routing & Provider Fallback
           </h2>
-          <p className="text-xs text-zinc-400 mb-4">
+          <p className="text-xs text-slate-500 mb-4">
             These default keys power generation for creators who do not provide their own keys (BYOK).
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-            <div className="p-3.5 bg-[#07090e] border border-zinc-800 rounded-md">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
               <div className="flex justify-between items-center mb-2">
-                <span className="font-semibold text-xs text-zinc-200">Google Gemini (Primary)</span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-950/40 text-emerald-400 border border-emerald-800/40">
+                <span className="font-semibold text-xs text-slate-800">Google Gemini (Primary)</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                   ACTIVE
                 </span>
               </div>
-              <div className="text-[11px] font-mono text-zinc-400">
+              <div className="text-xs text-slate-600 font-mono">
                 Model: gemini-1.5-flash
               </div>
             </div>
 
-            <div className="p-3.5 bg-[#07090e] border border-zinc-800 rounded-md">
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
               <div className="flex justify-between items-center mb-2">
-                <span className="font-semibold text-xs text-zinc-200">OpenAI (Fallback)</span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-zinc-900 text-zinc-400 border border-zinc-800">
+                <span className="font-semibold text-xs text-slate-800">OpenAI (Fallback)</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                   STANDBY
                 </span>
               </div>
-              <div className="text-[11px] font-mono text-zinc-400">
+              <div className="text-xs text-slate-600 font-mono">
                 Model: gpt-4o-mini
               </div>
             </div>
 
-            <div className="p-3.5 bg-[#07090e] border border-zinc-800 rounded-md">
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
               <div className="flex justify-between items-center mb-2">
-                <span className="font-semibold text-xs text-zinc-200">DeepSeek (Fallback)</span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-zinc-900 text-zinc-400 border border-zinc-800">
+                <span className="font-semibold text-xs text-slate-800">DeepSeek (Fallback)</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                   STANDBY
                 </span>
               </div>
-              <div className="text-[11px] font-mono text-zinc-400">
+              <div className="text-xs text-slate-600 font-mono">
                 Model: deepseek-chat
               </div>
             </div>
@@ -207,19 +207,19 @@ export default function AdminPage() {
         </div>
 
         {/* Tenant Registry */}
-        <div className="bg-[#0e121a] border border-zinc-800 rounded-lg p-5 shadow-xl">
-          <h2 className="text-sm font-semibold tracking-tight text-zinc-100 flex items-center gap-2 mb-1">
-            <Users size={16} className="text-emerald-400" />
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <h2 className="text-base font-semibold tracking-tight text-slate-900 flex items-center gap-2 mb-1">
+            <Users size={16} className="text-emerald-600" />
             Registered Creator Accounts (PostgreSQL Data)
           </h2>
-          <p className="text-xs text-zinc-400 mb-4">
+          <p className="text-xs text-slate-500 mb-4">
             Audited view of creators, their subscription packages, and connected social accounts.
           </p>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs font-mono">
               <thead>
-                <tr className="border-b border-zinc-800 text-zinc-400">
+                <tr className="border-b border-slate-200 text-slate-500">
                   <th className="py-2.5 px-3">CREATOR</th>
                   <th className="py-2.5 px-3">EMAIL</th>
                   <th className="py-2.5 px-3">SUBSCRIPTION TIER</th>
@@ -227,19 +227,19 @@ export default function AdminPage() {
                   <th className="py-2.5 px-3">STATUS</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-800/60">
+              <tbody className="divide-y divide-slate-100">
                 {users.map((u) => (
                   <tr key={u.id}>
-                    <td className="py-3 px-3 text-zinc-200 font-semibold">{u.name}</td>
-                    <td className="py-3 px-3 text-zinc-400">{u.email}</td>
+                    <td className="py-3 px-3 text-slate-900 font-semibold">{u.name}</td>
+                    <td className="py-3 px-3 text-slate-600">{u.email}</td>
                     <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded text-[11px] bg-cyan-950/40 text-cyan-400 border border-cyan-800/40">
+                      <span className="px-2 py-0.5 rounded-full text-[11px] bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
                         {u.subscription?.tier || 'FREE_TRIAL'}
                       </span>
                     </td>
-                    <td className="py-3 px-3 text-zinc-300">{u.role}</td>
+                    <td className="py-3 px-3 text-slate-700 font-medium">{u.role}</td>
                     <td className="py-3 px-3">
-                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-950/40 text-emerald-400 border border-emerald-800/40">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                         ACTIVE
                       </span>
                     </td>
@@ -251,12 +251,12 @@ export default function AdminPage() {
         </div>
 
         {/* Global Dispatch Audit Logs */}
-        <div className="bg-[#0e121a] border border-zinc-800 rounded-lg p-5 shadow-xl">
-          <h2 className="text-sm font-semibold tracking-tight text-zinc-100 flex items-center gap-2 mb-1">
-            <Radio size={16} className="text-purple-400" />
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <h2 className="text-base font-semibold tracking-tight text-slate-900 flex items-center gap-2 mb-1">
+            <Radio size={16} className="text-purple-600" />
             Global Platform Publishing Audit Stream
           </h2>
-          <p className="text-xs text-zinc-400 mb-4">
+          <p className="text-xs text-slate-500 mb-4">
             Immutable log of all scheduled and immediate post executions across Instagram, LinkedIn, and X.
           </p>
 
@@ -264,20 +264,20 @@ export default function AdminPage() {
             {logs.slice(0, 8).map((log, idx) => (
               <div
                 key={idx}
-                className="bg-[#07090e] border border-zinc-800/80 rounded-md p-3 flex justify-between items-center font-mono text-xs"
+                className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex justify-between items-center font-mono text-xs"
               >
                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <span className="font-semibold text-zinc-200">{log.platform}</span>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-950/40 text-emerald-400 border border-emerald-800/40">
+                  <span className="font-semibold text-slate-900">{log.platform}</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                     {log.status}
                   </span>
-                  <div className="text-zinc-400 truncate max-w-lg">
+                  <div className="text-slate-600 truncate max-w-lg">
                     {log.content || log.caption}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0 pl-3">
-                  <span className="text-zinc-500 text-[11px]">
+                  <span className="text-slate-400 text-[11px]">
                     {new Date(log.publishedAt).toLocaleTimeString()}
                   </span>
                   {log.externalUrl && (
@@ -285,7 +285,7 @@ export default function AdminPage() {
                       href={log.externalUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="px-2.5 py-1 rounded bg-zinc-800 border border-zinc-700 text-cyan-400 hover:text-cyan-300 flex items-center gap-1 text-xs"
+                      className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-blue-600 hover:text-blue-700 shadow-sm flex items-center gap-1 text-xs font-semibold"
                     >
                       <ExternalLink size={11} />
                       <span>Live Link</span>

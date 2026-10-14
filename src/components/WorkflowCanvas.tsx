@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ContentCalendar, PostItem, SocialConnection, Platform } from '@/types';
+import { ContentCalendar, PostItem, SocialConnection, Platform, UserSession } from '@/types';
 import {
   RotateCcw,
   RotateCw,
@@ -48,6 +48,7 @@ import {
 } from 'lucide-react';
 
 interface Props {
+  user?: UserSession;
   calendar: ContentCalendar | null;
   onOpenEditor: (post: PostItem, dayIndex: number) => void;
   onQuickGenerate: () => void;
@@ -107,6 +108,7 @@ const PLATFORM_CONFIG: Record<
 };
 
 export default function WorkflowCanvas({
+  user,
   calendar,
   onOpenEditor,
   onQuickGenerate,
@@ -153,138 +155,95 @@ export default function WorkflowCanvas({
     }
   };
 
-  // Dynamic multi-platform fallback posts per day (demonstrating 1 theme -> 3 native formats)
-  const getFallbackPosts = (dayNum: number) => {
-    if (dayNum === 2) {
-      return {
-        theme: 'Why 90% of AI Workflows Break in Production',
-        twitter: {
-          id: 'demo-tw-2',
-          platform: 'TWITTER' as Platform,
-          content: 'Why 90% of AI automations fail in production:\n\n1. Fragile JSON schema parsing\n2. Missing rate-limit backoffs\n3. Zero human review gates\n\nFix these 3 before scaling. What is your biggest failure point? #dev #saas',
-          status: 'PENDING_APPROVAL' as const,
-          scheduledTime: new Date(Date.now() + 3600000 * 26).toISOString(),
-          mediaUrl: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=600&auto=format&fit=crop&q=80',
-          mediaPrompt: 'Futuristic observability dashboard showing automated error rates and pipeline metrics',
-        },
-        linkedin: {
-          id: 'demo-li-2',
-          platform: 'LINKEDIN' as Platform,
-          content: 'We tested 40+ generative AI pipelines across production workloads. Here is what actually broke:\n\n1. Prompt drift across model version updates\n2. Rate limits silently dropping webhook payloads\n3. Lack of asynchronous queue workers\n\nWhen we introduced BullMQ with circuit breakers and presigned media uploads, our failure rate dropped from 14% to 0.2%.\n\nEngineering resilience matters more than prompt novelty. How does your team handle failure gates in AI agents?',
-          status: 'PENDING_APPROVAL' as const,
-          scheduledTime: new Date(Date.now() + 3600000 * 28).toISOString(),
-          mediaUrl: 'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=600&auto=format&fit=crop&q=80',
-          mediaPrompt: 'Clean minimalist systems architecture diagram on a dark glass background',
-        },
-        instagram: {
-          id: 'demo-ig-2',
-          platform: 'INSTAGRAM' as Platform,
-          content: 'Why your AI automations keep breaking (and how to fix them today) 🛠️\n\nSwipe through for our 3-step production checklist:\n\n🔒 Use structured JSON schemas\n⚡ Add Redis queue retries\n👀 Include one-click approval gates\n\nBookmark this post before your next deployment! 🚀 #developer #automation #systemdesign #coding',
-          status: 'PENDING_APPROVAL' as const,
-          scheduledTime: new Date(Date.now() + 3600000 * 30).toISOString(),
-          mediaUrl: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop&q=80',
-          mediaPrompt: 'Cyberpunk coding terminal screen with glowing green and cyan debug text',
-        },
-      };
-    }
-
-    if (dayNum === 3) {
-      return {
-        theme: 'From 12h/Week Ops to Autonomous Publishing: A 7-Day Case Study',
-        twitter: {
-          id: 'demo-tw-3',
-          platform: 'TWITTER' as Platform,
-          content: 'From 12 hours/week of manual social scheduling to 10 minutes.\n\nHere is the autonomous pipeline architecture that made it possible. 🧵👇 #buildinpublic #solopreneur',
-          status: 'PENDING_APPROVAL' as const,
-          scheduledTime: new Date(Date.now() + 3600000 * 50).toISOString(),
-          mediaUrl: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=600&auto=format&fit=crop&q=80',
-          mediaPrompt: 'Clean analytics growth chart showing exponential organic audience scale',
-        },
-        linkedin: {
-          id: 'demo-li-3',
-          platform: 'LINKEDIN' as Platform,
-          content: 'Case Study: How we cut 12 hours of manual social content distribution down to 10 minutes a week.\n\nThe old way: Writing separate copy per platform, downloading images, re-uploading manually.\n\nThe autonomous way:\n• 1 single campaign theme synthesized by AI\n• Native adaptations generated per channel\n• Multi-tenant S3 media storage with automatic presigned links\n• BullMQ queue dispatching at peak engagement windows\n\nFocus on strategy. Let machines handle the plumbing.',
-          status: 'PENDING_APPROVAL' as const,
-          scheduledTime: new Date(Date.now() + 3600000 * 52).toISOString(),
-          mediaUrl: 'https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=600&auto=format&fit=crop&q=80',
-          mediaPrompt: 'Professional office meeting discussing high-growth social media marketing strategy',
-        },
-        instagram: {
-          id: 'demo-ig-3',
-          platform: 'INSTAGRAM' as Platform,
-          content: '12 hours of weekly busywork ➡️ 10 minutes of automated review. 📈\n\nHere is how we set up our multi-channel creator engine:\n\n✨ 1 core campaign brief\n📱 3 platform-tailored formats\n☁️ Auto-synced S3 asset storage\n\nShare this with a creator who needs to reclaim their time! 💡 #creatoreconomy #automation #productivitytips #solopreneur',
-          status: 'PENDING_APPROVAL' as const,
-          scheduledTime: new Date(Date.now() + 3600000 * 54).toISOString(),
-          mediaUrl: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=600&auto=format&fit=crop&q=80',
-          mediaPrompt: 'Bright modern collaborative workspace with creator laptop and mobile phone preview',
-        },
-      };
-    }
-
-    // Default: Day 1
-    return {
-      theme: 'The 3-Tool Rule for Solopreneur AI Automation',
-      twitter: {
-        id: 'demo-tw-1',
-        platform: 'TWITTER' as Platform,
-        content: 'Stop using 10 AI tools. Pick 3 that talk to each other: Make, ChatGPT, and Notion automate 80% of busywork.\n\nWhat is your core stack? 👇 #automation #solopreneur',
-        status: 'APPROVED' as const,
-        scheduledTime: new Date(Date.now() + 3600000 * 2).toISOString(),
-        mediaUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
-        mediaPrompt: 'Futuristic AI software workspace with glowing connection lines',
-      },
-      linkedin: {
-        id: 'demo-li-1',
-        platform: 'LINKEDIN' as Platform,
-        content: 'Most founders drown in AI tools. They collect them like trading cards, but rarely connect them.\n\nThe real leverage is the workflow between tools:\n1. Choose 3 core tools max\n2. Connect them with a webhook pipeline\n3. Audit weekly: if a tool does not save 2+ hours, remove it.\n\nSimplicity scales. Complexity breaks. What is the one automation tool you cannot live without?',
-        status: 'PENDING_APPROVAL' as const,
-        scheduledTime: new Date(Date.now() + 3600000 * 4).toISOString(),
-        mediaUrl: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=600&auto=format&fit=crop&q=80',
-        mediaPrompt: 'Executive analytics dashboard showing automated creator workflows',
-      },
-      instagram: {
-        id: 'demo-ig-1',
-        platform: 'INSTAGRAM' as Platform,
-        content: 'Your AI stack is too big. 🛑\n\nHere is the 3-tool rule that changed my business workflow:\n\n1️⃣ Capture with Notion\n2️⃣ Reason with ChatGPT\n3️⃣ Connect with Make\n\nSave this for your next tool audit! ⚡ #saas #growth #automation #solopreneur',
-        status: 'PENDING_APPROVAL' as const,
-        scheduledTime: new Date(Date.now() + 3600000 * 6).toISOString(),
-        mediaUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
-        mediaPrompt: 'Modern gradient carousel slide showcasing the 3-tool rule',
-      },
-    };
-  };
-
-  // Resolve active day number and theme
+  // Resolve active day number and theme from real calendar data (no hardcoded fallback dummy data)
   const activeDayNum = selectedDayIndex === 'all' ? 1 : Number(selectedDayIndex);
   const currentDay =
     calendar?.days?.find((d) => Number(d.dayIndex) === activeDayNum) || calendar?.days?.[0];
 
-  const fallback = getFallbackPosts(activeDayNum);
-  const activeTheme = currentDay?.theme || fallback.theme;
+  const activeTheme = currentDay?.theme || (calendar?.niche ? `${calendar.niche} Strategy` : 'Multi-Channel Campaign Strategy');
 
   const twitterPost = currentDay?.posts?.find((p) => p.platform === 'TWITTER');
   const linkedinPost = currentDay?.posts?.find((p) => p.platform === 'LINKEDIN');
   const instagramPost = currentDay?.posts?.find((p) => p.platform === 'INSTAGRAM');
 
-  const activeTwitter = twitterPost || fallback.twitter;
-  const activeLinkedin = linkedinPost || fallback.linkedin;
-  const activeInstagram = instagramPost || fallback.instagram;
+  // Helper to render clean empty social card when no post exists for that platform yet
+  const renderEmptySocialCard = (
+    platform: Platform,
+    dayIndex: number,
+    isCompactInGraph = false
+  ) => {
+    const cardWidth = isCompactInGraph ? 'w-[320px] sm:w-[350px]' : 'w-full';
+    const isTw = platform === 'TWITTER';
+    const isLi = platform === 'LINKEDIN';
+    const title = isTw ? '𝕏 Twitter Step' : isLi ? 'LinkedIn Professional Step' : 'Instagram Visual Step';
+
+    return (
+      <div className={`manychat-node overflow-hidden flex flex-col text-left ${cardWidth}`}>
+        {isCompactInGraph && <div className="manychat-port manychat-port-top" title="Input Port" />}
+        <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-200/90 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-800">{title}</span>
+          </div>
+          <span className="text-[10px] text-slate-400 font-mono">No Post Scheduled</span>
+        </div>
+        <div className="p-6 bg-white flex flex-col items-center justify-center text-center gap-2.5">
+          <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center text-sm font-semibold">
+            {isTw ? '𝕏' : isLi ? 'in' : '📸'}
+          </div>
+          <p className="text-xs text-slate-600 font-medium">No post scheduled for Day {dayIndex}</p>
+          <button
+            type="button"
+            onClick={() => {
+              onOpenEditor(
+                {
+                  id: `new-${platform.toLowerCase()}-d${dayIndex}`,
+                  platform,
+                  content: '',
+                  status: 'PENDING_APPROVAL',
+                  scheduledTime: new Date(Date.now() + 86400000 * (dayIndex - 1) + 3600000 * 4).toISOString(),
+                },
+                dayIndex
+              );
+            }}
+            className="mt-1 px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 text-xs font-semibold flex items-center gap-1.5 transition-colors border border-sky-200"
+          >
+            <Plus size={12} />
+            <span>Create {platform.toLowerCase()} Post</span>
+          </button>
+        </div>
+        {isCompactInGraph && <div className="manychat-port manychat-port-bottom" title="Output Port" />}
+      </div>
+    );
+  };
 
   // Helper to resolve connected account info or defaults
   const getAccountDetails = (platform: Platform) => {
     const conn = connections?.find((c) => c.platform === platform);
+
+    // Dynamically resolve author name and handle from logged-in user session
+    const defaultAuthorName = user?.name?.trim() || (user?.email ? user.email.split('@')[0] : 'Creator');
+    const defaultHandle = user?.screenName
+      ? user.screenName.replace(/^@/, '')
+      : (user?.email
+        ? user.email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '')
+        : (user?.name ? user.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') : 'creator'));
+
+    const defaultHeadline = calendar?.niche
+      ? `${calendar.niche} Strategist & Creator`
+      : 'Content Creator & Automation Specialist';
+
     if (conn && conn.connected) {
       return {
-        name: conn.accountName || 'Sobin JM',
-        handle: conn.handle ? (conn.handle.startsWith('@') ? conn.handle.slice(1) : conn.handle) : 'jmsobin',
-        headline: 'Director of Engineering · AI Automation & Systems',
+        name: conn.accountName || defaultAuthorName,
+        handle: conn.handle ? (conn.handle.startsWith('@') ? conn.handle.slice(1) : conn.handle) : defaultHandle,
+        headline: defaultHeadline,
         isSandbox: conn.isSandbox,
       };
     }
     return {
-      name: 'Sobin JM',
-      handle: 'jmsobin',
-      headline: 'Director of Engineering · AI Automation & Systems',
+      name: defaultAuthorName,
+      handle: defaultHandle,
+      headline: defaultHeadline,
       isSandbox: false,
     };
   };
@@ -344,10 +303,10 @@ export default function WorkflowCanvas({
   const renderStyledText = (content: string, platform: Platform) => {
     const hashtagClass =
       platform === 'TWITTER'
-        ? 'text-sky-400 hover:underline font-mono'
+        ? 'text-sky-600 hover:underline font-mono font-medium'
         : platform === 'LINKEDIN'
-        ? 'text-blue-400 hover:underline font-mono'
-        : 'text-pink-400 hover:underline font-mono';
+        ? 'text-blue-600 hover:underline font-mono font-medium'
+        : 'text-pink-600 hover:underline font-mono font-medium';
 
     const words = content.split(/(\s+)/);
     return words.map((chunk, i) => {
@@ -360,7 +319,7 @@ export default function WorkflowCanvas({
       }
       if (chunk.startsWith('@')) {
         return (
-          <span key={i} className="text-sky-300 font-semibold">
+          <span key={i} className="text-sky-600 font-semibold">
             {chunk}
           </span>
         );
@@ -486,26 +445,26 @@ export default function WorkflowCanvas({
             <div>{renderStatusBadge(post.status)}</div>
           </div>
 
-          {/* Native Post Body */}
-          <div className="bg-[#0f1419] p-3.5 flex flex-col gap-2.5">
+          {/* Native Post Body (Light Theme) */}
+          <div className="bg-white p-3.5 flex flex-col gap-2.5">
             {/* Author Row */}
             <div className="flex items-start gap-2.5">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-sky-400 to-indigo-600 flex items-center justify-center font-bold text-xs text-white shrink-0 shadow-xs">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center font-bold text-xs text-white shrink-0 shadow-xs">
                 {authorInfo.name.split(' ').map((n) => n[0]).join('').slice(0, 2)}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1 leading-tight flex-wrap">
-                  <span className="text-xs font-bold text-white hover:underline cursor-pointer">
+                  <span className="text-xs font-bold text-slate-900 hover:underline cursor-pointer">
                     {authorInfo.name}
                   </span>
-                  <BadgeCheck size={13} className="text-sky-400 fill-sky-400/20" />
-                  <span className="text-[11px] text-slate-400">@{authorInfo.handle}</span>
-                  <span className="text-slate-500 text-[10px]">· 2h</span>
-                  <MoreHorizontal size={14} className="text-slate-500 ml-auto hover:text-slate-300 cursor-pointer" />
+                  <BadgeCheck size={13} className="text-sky-500 fill-sky-500/10" />
+                  <span className="text-[11px] text-slate-500">@{authorInfo.handle}</span>
+                  <span className="text-slate-400 text-[10px]">· 2h</span>
+                  <MoreHorizontal size={14} className="text-slate-400 ml-auto hover:text-slate-600 cursor-pointer" />
                 </div>
 
                 {/* Tweet Copy */}
-                <div className="text-xs text-slate-100 whitespace-pre-wrap leading-relaxed mt-1.5 select-text">
+                <div className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed mt-1.5 select-text">
                   {renderStyledText(post.content, 'TWITTER')}
                 </div>
               </div>
@@ -521,7 +480,7 @@ export default function WorkflowCanvas({
                     prompt: post.mediaPrompt || undefined,
                   })
                 }
-                className="relative group/media overflow-hidden rounded-xl border border-slate-800 bg-black aspect-video max-h-44 w-full cursor-pointer mt-1"
+                className="relative group/media overflow-hidden rounded-xl border border-slate-200 bg-slate-100 aspect-video max-h-44 w-full cursor-pointer mt-1"
               >
                 <img
                   src={post.mediaUrl}
@@ -534,15 +493,15 @@ export default function WorkflowCanvas({
                 </div>
               </div>
             ) : post.mediaPrompt ? (
-              <div className="p-2.5 rounded-xl bg-slate-900/80 border border-dashed border-slate-800 flex items-center justify-between gap-2 text-[10px] mt-1">
-                <span className="text-slate-400 truncate flex items-center gap-1.5">
-                  <ImageIcon size={12} className="text-sky-400 shrink-0" />
+              <div className="p-2.5 rounded-xl bg-slate-50 border border-dashed border-slate-200 flex items-center justify-between gap-2 text-[10px] mt-1">
+                <span className="text-slate-600 truncate flex items-center gap-1.5">
+                  <ImageIcon size={12} className="text-sky-500 shrink-0" />
                   <span className="italic truncate">&quot;{post.mediaPrompt}&quot;</span>
                 </span>
                 <button
                   type="button"
                   onClick={() => onOpenEditor(post, dayIndex)}
-                  className="text-sky-400 hover:text-sky-300 font-semibold shrink-0 hover:underline"
+                  className="text-sky-600 hover:text-sky-700 font-semibold shrink-0 hover:underline"
                 >
                   Generate
                 </button>
@@ -550,20 +509,20 @@ export default function WorkflowCanvas({
             ) : null}
 
             {/* Native Metrics Bar */}
-            <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1.5 border-t border-slate-800/80">
-              <span className="flex items-center gap-1 hover:text-sky-400 cursor-pointer transition-colors">
+            <div className="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100">
+              <span className="flex items-center gap-1 hover:text-sky-600 cursor-pointer transition-colors">
                 <MessageCircle size={13} /> 14
               </span>
-              <span className="flex items-center gap-1 hover:text-emerald-400 cursor-pointer transition-colors">
+              <span className="flex items-center gap-1 hover:text-emerald-600 cursor-pointer transition-colors">
                 <Repeat2 size={13} /> 38
               </span>
-              <span className="flex items-center gap-1 hover:text-pink-500 cursor-pointer transition-colors">
+              <span className="flex items-center gap-1 hover:text-pink-600 cursor-pointer transition-colors">
                 <Heart size={13} /> 245
               </span>
-              <span className="flex items-center gap-1 hover:text-sky-400 cursor-pointer transition-colors">
+              <span className="flex items-center gap-1 hover:text-sky-600 cursor-pointer transition-colors">
                 <BarChart2 size={13} /> 2.8K
               </span>
-              <span className="flex items-center gap-1 hover:text-slate-200 cursor-pointer transition-colors">
+              <span className="flex items-center gap-1 hover:text-slate-700 cursor-pointer transition-colors">
                 <Bookmark size={13} />
               </span>
             </div>
@@ -603,8 +562,8 @@ export default function WorkflowCanvas({
             <div>{renderStatusBadge(post.status)}</div>
           </div>
 
-          {/* Native Post Body */}
-          <div className="bg-[#1b1f23] p-3.5 flex flex-col gap-2">
+          {/* Native Post Body (Light Theme) */}
+          <div className="bg-white p-3.5 flex flex-col gap-2">
             {/* Author Row */}
             <div className="flex items-start gap-2.5">
               <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-800 flex items-center justify-center font-bold text-xs text-white shrink-0 shadow-xs">
@@ -612,24 +571,24 @@ export default function WorkflowCanvas({
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1 leading-tight">
-                  <span className="text-xs font-bold text-zinc-100 hover:text-blue-400 cursor-pointer">
+                  <span className="text-xs font-bold text-slate-900 hover:text-blue-600 cursor-pointer">
                     {authorInfo.name}
                   </span>
-                  <BadgeCheck size={13} className="text-blue-400" />
-                  <span className="text-[9px] text-zinc-400 font-mono">· 1st</span>
+                  <BadgeCheck size={13} className="text-blue-600" />
+                  <span className="text-[9px] text-slate-500 font-mono">· 1st</span>
                 </div>
-                <div className="text-[10px] text-zinc-400 truncate mt-0.5 leading-tight">
+                <div className="text-[10px] text-slate-500 truncate mt-0.5 leading-tight">
                   {authorInfo.headline}
                 </div>
-                <div className="text-[9px] text-zinc-500 flex items-center gap-1 mt-0.5">
+                <div className="text-[9px] text-slate-400 flex items-center gap-1 mt-0.5">
                   <span>2h</span> · <span>Edited</span> · <Globe size={10} />
                 </div>
               </div>
-              <MoreHorizontal size={14} className="text-zinc-500 hover:text-zinc-300 cursor-pointer ml-auto" />
+              <MoreHorizontal size={14} className="text-slate-400 hover:text-slate-600 cursor-pointer ml-auto" />
             </div>
 
             {/* LinkedIn Copy with '...see more' fold */}
-            <div className="text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed mt-1 select-text">
+            <div className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed mt-1 select-text">
               {renderStyledText(
                 post.content.length > 210 ? post.content.slice(0, 210) : post.content,
                 'LINKEDIN'
@@ -637,7 +596,7 @@ export default function WorkflowCanvas({
               {post.content.length > 210 && (
                 <span
                   onClick={() => onOpenEditor(post, dayIndex)}
-                  className="text-zinc-400 hover:text-blue-400 cursor-pointer font-semibold ml-1"
+                  className="text-slate-500 hover:text-blue-600 cursor-pointer font-semibold ml-1"
                 >
                   …see more
                 </span>
@@ -654,7 +613,7 @@ export default function WorkflowCanvas({
                     prompt: post.mediaPrompt || undefined,
                   })
                 }
-                className="relative group/media overflow-hidden rounded-lg border border-zinc-700 bg-black aspect-video max-h-44 w-full cursor-pointer mt-1"
+                className="relative group/media overflow-hidden rounded-lg border border-slate-200 bg-slate-100 aspect-video max-h-44 w-full cursor-pointer mt-1"
               >
                 <img
                   src={post.mediaUrl}
@@ -667,15 +626,15 @@ export default function WorkflowCanvas({
                 </div>
               </div>
             ) : post.mediaPrompt ? (
-              <div className="p-2.5 rounded-lg bg-zinc-800/80 border border-dashed border-zinc-700 flex items-center justify-between gap-2 text-[10px] mt-1">
-                <span className="text-zinc-400 truncate flex items-center gap-1.5">
-                  <ImageIcon size={12} className="text-blue-400 shrink-0" />
+              <div className="p-2.5 rounded-lg bg-slate-50 border border-dashed border-slate-200 flex items-center justify-between gap-2 text-[10px] mt-1">
+                <span className="text-slate-600 truncate flex items-center gap-1.5">
+                  <ImageIcon size={12} className="text-blue-600 shrink-0" />
                   <span className="italic truncate">&quot;{post.mediaPrompt}&quot;</span>
                 </span>
                 <button
                   type="button"
                   onClick={() => onOpenEditor(post, dayIndex)}
-                  className="text-blue-400 hover:text-blue-300 font-semibold shrink-0 hover:underline"
+                  className="text-blue-600 hover:text-blue-700 font-semibold shrink-0 hover:underline"
                 >
                   Generate
                 </button>
@@ -683,7 +642,7 @@ export default function WorkflowCanvas({
             ) : null}
 
             {/* Reactions Stats */}
-            <div className="flex items-center justify-between text-[10px] text-zinc-400 pt-2 border-b border-zinc-700/60 pb-1.5 mt-0.5">
+            <div className="flex items-center justify-between text-[10px] text-slate-500 pt-2 border-b border-slate-100 pb-1.5 mt-0.5">
               <div className="flex items-center gap-1">
                 <span className="flex items-center -space-x-1">
                   <span className="w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center text-white text-[8px] z-10">
@@ -701,17 +660,17 @@ export default function WorkflowCanvas({
             </div>
 
             {/* Native Actions: Like, Comment, Repost, Send */}
-            <div className="flex items-center justify-between text-[10px] text-zinc-400 pt-1 px-1">
-              <span className="flex items-center gap-1 hover:text-zinc-200 cursor-pointer">
+            <div className="flex items-center justify-between text-[10px] text-slate-600 pt-1 px-1">
+              <span className="flex items-center gap-1 hover:text-slate-900 cursor-pointer">
                 <ThumbsUp size={12} /> Like
               </span>
-              <span className="flex items-center gap-1 hover:text-zinc-200 cursor-pointer">
+              <span className="flex items-center gap-1 hover:text-slate-900 cursor-pointer">
                 <MessageCircle size={12} /> Comment
               </span>
-              <span className="flex items-center gap-1 hover:text-zinc-200 cursor-pointer">
+              <span className="flex items-center gap-1 hover:text-slate-900 cursor-pointer">
                 <Repeat2 size={12} /> Repost
               </span>
-              <span className="flex items-center gap-1 hover:text-zinc-200 cursor-pointer">
+              <span className="flex items-center gap-1 hover:text-slate-900 cursor-pointer">
                 <Send size={12} /> Send
               </span>
             </div>
@@ -748,24 +707,24 @@ export default function WorkflowCanvas({
           <div>{renderStatusBadge(post.status)}</div>
         </div>
 
-        {/* Native Instagram Post Body */}
-        <div className="bg-black flex flex-col">
+        {/* Native Instagram Post Body (Light Theme) */}
+        <div className="bg-white flex flex-col">
           {/* Native Instagram Header */}
           <div className="px-3 py-2 flex items-center gap-2.5">
             {/* Story Ring */}
             <div className="p-[2px] rounded-full bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 shrink-0">
-              <div className="w-7 h-7 rounded-full bg-black flex items-center justify-center font-bold text-[10px] text-white">
+              <div className="w-7 h-7 rounded-full bg-white border border-slate-100 flex items-center justify-center font-bold text-[10px] text-slate-800">
                 {authorInfo.name.split(' ').map((n) => n[0]).join('').slice(0, 2)}
               </div>
             </div>
             <div className="min-w-0 flex-1 leading-tight">
               <div className="flex items-center gap-1">
-                <span className="text-xs font-bold text-zinc-100 truncate">{authorInfo.handle}</span>
-                <BadgeCheck size={11} className="text-sky-400" />
+                <span className="text-xs font-bold text-slate-900 truncate">{authorInfo.handle}</span>
+                <BadgeCheck size={11} className="text-sky-500" />
               </div>
-              <span className="text-[9px] text-zinc-500 truncate block">Original audio</span>
+              <span className="text-[9px] text-slate-400 truncate block">Original audio</span>
             </div>
-            <MoreHorizontal size={14} className="text-zinc-400 ml-auto cursor-pointer" />
+            <MoreHorizontal size={14} className="text-slate-400 hover:text-slate-600 ml-auto cursor-pointer" />
           </div>
 
           {/* HERO IMAGE ON TOP */}
@@ -778,7 +737,7 @@ export default function WorkflowCanvas({
                   prompt: post.mediaPrompt || undefined,
                 })
               }
-              className="relative group/media overflow-hidden bg-zinc-900 aspect-square w-full cursor-pointer"
+              className="relative group/media overflow-hidden bg-slate-100 aspect-square w-full cursor-pointer"
             >
               <img
                 src={post.mediaUrl}
@@ -791,44 +750,44 @@ export default function WorkflowCanvas({
               </div>
             </div>
           ) : post.mediaPrompt ? (
-            <div className="p-4 bg-zinc-950 border-y border-zinc-900 flex flex-col items-center justify-center gap-2 aspect-video text-center">
+            <div className="p-4 bg-slate-50 border-y border-slate-100 flex flex-col items-center justify-center gap-2 aspect-video text-center">
               <ImageIcon size={22} className="text-pink-500/70" />
-              <span className="text-zinc-400 italic text-[11px] line-clamp-2 px-3">
+              <span className="text-slate-600 italic text-[11px] line-clamp-2 px-3">
                 &quot;{post.mediaPrompt}&quot;
               </span>
               <button
                 type="button"
                 onClick={() => onOpenEditor(post, dayIndex)}
-                className="text-[11px] font-bold text-pink-400 hover:text-pink-300 hover:underline"
+                className="text-[11px] font-bold text-pink-600 hover:text-pink-700 hover:underline"
               >
                 Generate Post Visual
               </button>
             </div>
           ) : (
-            <div className="p-6 bg-zinc-950 border-y border-zinc-900 flex items-center justify-center text-zinc-600 text-[11px] font-mono">
+            <div className="p-6 bg-slate-50 border-y border-slate-100 flex items-center justify-center text-slate-400 text-[11px] font-mono">
               no visual generated yet
             </div>
           )}
 
           {/* Native Action Row: Heart, Comment, Send, Bookmark */}
-          <div className="px-3 pt-2.5 pb-1 flex items-center justify-between text-zinc-200">
+          <div className="px-3 pt-2.5 pb-1 flex items-center justify-between text-slate-700">
             <div className="flex items-center gap-3.5">
               <Heart size={16} className="hover:text-pink-500 cursor-pointer transition-colors" />
-              <MessageCircle size={16} className="hover:text-zinc-400 cursor-pointer transition-colors" />
-              <Send size={16} className="hover:text-zinc-400 cursor-pointer transition-colors" />
+              <MessageCircle size={16} className="hover:text-slate-500 cursor-pointer transition-colors" />
+              <Send size={16} className="hover:text-slate-500 cursor-pointer transition-colors" />
             </div>
-            <Bookmark size={16} className="hover:text-zinc-400 cursor-pointer transition-colors" />
+            <Bookmark size={16} className="hover:text-slate-500 cursor-pointer transition-colors" />
           </div>
 
           {/* Likes & Caption */}
           <div className="px-3 pb-3 space-y-1 text-left">
-            <div className="text-[11px] font-bold text-zinc-100">
+            <div className="text-[11px] font-bold text-slate-800">
               Liked by <span className="font-extrabold">alex_founder</span> and{' '}
               <span className="font-extrabold">348 others</span>
             </div>
 
-            <div className="text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed select-text">
-              <span className="font-bold text-white mr-1.5">{authorInfo.handle}</span>
+            <div className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed select-text">
+              <span className="font-bold text-slate-900 mr-1.5">{authorInfo.handle}</span>
               {renderStyledText(
                 post.content.length > 140 ? post.content.slice(0, 140) : post.content,
                 'INSTAGRAM'
@@ -836,7 +795,7 @@ export default function WorkflowCanvas({
               {post.content.length > 140 && (
                 <span
                   onClick={() => onOpenEditor(post, dayIndex)}
-                  className="text-zinc-500 hover:text-pink-400 cursor-pointer font-medium ml-1"
+                  className="text-slate-400 hover:text-pink-600 cursor-pointer font-medium ml-1"
                 >
                   … more
                 </span>
@@ -845,11 +804,11 @@ export default function WorkflowCanvas({
 
             <div
               onClick={() => onOpenEditor(post, dayIndex)}
-              className="text-[10px] text-zinc-500 hover:text-zinc-400 cursor-pointer pt-0.5"
+              className="text-[10px] text-slate-400 hover:text-slate-600 cursor-pointer pt-0.5"
             >
               View all 24 comments
             </div>
-            <div className="text-[9px] text-zinc-600 font-mono uppercase tracking-wide">
+            <div className="text-[9px] text-slate-400 font-mono uppercase tracking-wide">
               2 hours ago
             </div>
           </div>
@@ -1166,7 +1125,9 @@ export default function WorkflowCanvas({
                 𝕏 Consumer & Viral
               </span>
 
-              {renderNativeSocialCard(activeTwitter, activeDayNum, true)}
+              {twitterPost
+                ? renderNativeSocialCard(twitterPost, activeDayNum, true)
+                : renderEmptySocialCard('TWITTER', activeDayNum, true)}
 
               {/* Cable down to downstream node */}
               <div className="flex flex-col items-center -my-1 z-10">
@@ -1210,7 +1171,9 @@ export default function WorkflowCanvas({
                 📸 Visual & Carousel
               </span>
 
-              {renderNativeSocialCard(activeInstagram, activeDayNum, true)}
+              {instagramPost
+                ? renderNativeSocialCard(instagramPost, activeDayNum, true)
+                : renderEmptySocialCard('INSTAGRAM', activeDayNum, true)}
 
               {/* Cable down to downstream node */}
               <div className="flex flex-col items-center -my-1 z-10">
@@ -1228,7 +1191,7 @@ export default function WorkflowCanvas({
 
               {/* Downstream Node 2: Visual Studio & S3 Media Sync */}
               <div
-                onClick={() => onOpenEditor(activeInstagram, activeDayNum)}
+                onClick={() => instagramPost && onOpenEditor(instagramPost, activeDayNum)}
                 className="manychat-node w-full p-3 shadow-xs flex items-center justify-between gap-3 cursor-pointer group"
                 title="Click to manage Instagram Visual & S3 assets"
               >
@@ -1254,7 +1217,9 @@ export default function WorkflowCanvas({
                 💼 Professional B2B
               </span>
 
-              {renderNativeSocialCard(activeLinkedin, activeDayNum, true)}
+              {linkedinPost
+                ? renderNativeSocialCard(linkedinPost, activeDayNum, true)
+                : renderEmptySocialCard('LINKEDIN', activeDayNum, true)}
 
               {/* Cable down to downstream node */}
               <div className="flex flex-col items-center -my-1 z-10">
@@ -1368,11 +1333,10 @@ export default function WorkflowCanvas({
             {(selectedDayIndex === 'all' ? [1, 2, 3] : [activeDayNum]).map((dNum) => {
               const dayNum = Number(dNum);
               const dayObj = calendar?.days?.find((d) => Number(d.dayIndex) === dayNum);
-              const fb = getFallbackPosts(dayNum);
-              const theme = dayObj?.theme || fb.theme;
-              const tw = dayObj?.posts?.find((p) => p.platform === 'TWITTER') || fb.twitter;
-              const li = dayObj?.posts?.find((p) => p.platform === 'LINKEDIN') || fb.linkedin;
-              const ig = dayObj?.posts?.find((p) => p.platform === 'INSTAGRAM') || fb.instagram;
+              const theme = dayObj?.theme || (calendar?.niche ? `${calendar.niche} Day ${dayNum} Focus` : `Day ${dayNum} Strategy`);
+              const tw = dayObj?.posts?.find((p) => p.platform === 'TWITTER');
+              const li = dayObj?.posts?.find((p) => p.platform === 'LINKEDIN');
+              const ig = dayObj?.posts?.find((p) => p.platform === 'INSTAGRAM');
 
               return (
                 <div key={dayNum} className="space-y-4 pt-1 w-full">
@@ -1390,13 +1354,13 @@ export default function WorkflowCanvas({
                   </div>
 
                   {/* 1. Twitter Post Card */}
-                  {renderNativeSocialCard(tw, dayNum, false)}
+                  {tw ? renderNativeSocialCard(tw, dayNum, false) : renderEmptySocialCard('TWITTER', dayNum, false)}
 
                   {/* 2. LinkedIn Post Card */}
-                  {renderNativeSocialCard(li, dayNum, false)}
+                  {li ? renderNativeSocialCard(li, dayNum, false) : renderEmptySocialCard('LINKEDIN', dayNum, false)}
 
                   {/* 3. Instagram Post Card */}
-                  {renderNativeSocialCard(ig, dayNum, false)}
+                  {ig ? renderNativeSocialCard(ig, dayNum, false) : renderEmptySocialCard('INSTAGRAM', dayNum, false)}
                 </div>
               );
             })}

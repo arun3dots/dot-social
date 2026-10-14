@@ -227,7 +227,7 @@ export default function OnboardingPage() {
             className="input"
             value={screenName}
             onChange={(e) => setScreenName(e.target.value)}
-            placeholder="e.g. Sobin, or @growthops"
+            placeholder="e.g. Alex, or @growthops"
             autoFocus
           />
         )}

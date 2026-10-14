@@ -452,7 +452,7 @@ export async function POST(req: NextRequest) {
 
       // Prefer the prompt written for THIS platform, so a later regeneration stays platform-specific.
       const storedPrompt = draft.imagePrompt || (wantsImage ? String(imageReport?.promptsByPlatform?.[platform] || imageReport?.prompt || '') || null : null);
-      const mediaUrl = mediaByPlatform.get(platform) || null;
+      const mediaUrl = (typeof body.mediaUrl === 'string' && body.mediaUrl.trim()) ? body.mediaUrl.trim() : (mediaByPlatform.get(platform) || null);
       const s3Info = s3ByPlatform.get(platform) || null;
 
       await pool.query(
