@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import pool, { initPostgresTables } from '@/lib/postgres';
 import { currentUserId } from '@/lib/session';
 import { uploadLocalFileToS3 } from '@/lib/s3';
@@ -43,8 +44,9 @@ export async function POST(req: NextRequest) {
     if (owned.rows.length === 0) return NextResponse.json({ error: 'Post not found for this user' }, { status: 404 });
     const calendarId = owned.rows[0].calendar_id;
 
-    const dir = path.join(process.cwd(), 'media', 'generated', String(calendarId));
-    fs.mkdirSync(dir, { recursive: true });
+    const baseDir = process.env.VERCEL ? '/tmp' : process.cwd();
+    const dir = path.join(baseDir, 'media', 'generated', String(calendarId));
+    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
     const fileName = `${calendarId}_uploaded_${Date.now().toString(36)}${ext}`;
     const localFilePath = path.join(dir, fileName);
     fs.writeFileSync(localFilePath, Buffer.from(await file.arrayBuffer()));

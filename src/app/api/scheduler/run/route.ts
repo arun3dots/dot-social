@@ -16,6 +16,13 @@ async function authorize(req: NextRequest): Promise<{ ok: boolean; how: string }
   const given = (req.headers.get('x-scheduler-secret') || '').trim();
   if (secret && given && given === secret) return { ok: true, how: 'secret' };
 
+  // Vercel Cron automatically sends Authorization: Bearer <CRON_SECRET>
+  const cronSecret = (process.env.CRON_SECRET || '').trim();
+  const authHeader = (req.headers.get('authorization') || '').trim();
+  if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+    return { ok: true, how: 'vercel-cron' };
+  }
+
   const uid = await currentUserId();
   if (uid) {
     const r = await pool.query('SELECT role FROM users WHERE id = $1', [uid]);
@@ -123,3 +130,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export async function GET(req: NextRequest) {
+  return POST(req);
+}
+

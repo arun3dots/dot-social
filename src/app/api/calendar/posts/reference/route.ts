@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import pool, { initPostgresTables } from '@/lib/postgres';
 import { currentUserId } from '@/lib/session';
 
@@ -70,8 +71,9 @@ export async function POST(req: NextRequest) {
       planned.push({ file, ext, i });
     }
 
-    const dir = path.join(process.cwd(), 'media', 'generated', calendarId);
-    fs.mkdirSync(dir, { recursive: true });
+    const baseDir = process.env.VERCEL ? '/tmp' : process.cwd();
+    const dir = path.join(baseDir, 'media', 'generated', calendarId);
+    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
     const stamp = Date.now().toString(36);
     const stored: { url: string; name: string; bytes: number }[] = [];
     for (const { file, ext, i } of planned) {

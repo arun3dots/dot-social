@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import pool, { initPostgresTables } from '@/lib/postgres';
 import { currentUserId } from '@/lib/session';
 import {
@@ -38,16 +39,23 @@ const PLATFORMS = ['TWITTER', 'LINKEDIN', 'INSTAGRAM'];
 
 function runGenerator(args: string[]): Promise<{ code: number; out: string; err: string }> {
   return new Promise((resolve) => {
-    const child = spawn('python', args);
-    let out = '';
-    let err = '';
-    child.stdout.on('data', (d) => {
-      out += d.toString();
-    });
-    child.stderr.on('data', (d) => {
-      err += d.toString();
-    });
-    child.on('close', (code) => resolve({ code: code ?? 1, out, err }));
+    try {
+      const child = spawn('python', args);
+      let out = '';
+      let err = '';
+      child.stdout?.on('data', (d) => {
+        out += d.toString();
+      });
+      child.stderr?.on('data', (d) => {
+        err += d.toString();
+      });
+      child.on('error', (e) => {
+        resolve({ code: 1, out: '', err: `Python spawn error: ${e.message}` });
+      });
+      child.on('close', (code) => resolve({ code: code ?? 1, out, err }));
+    } catch (e: any) {
+      resolve({ code: 1, out: '', err: `Spawn error: ${e.message}` });
+    }
   });
 }
 
@@ -284,8 +292,9 @@ export async function POST(req: NextRequest) {
         const firstPrompt = () => Array.from(prompts.values())[0] || '';
         const promptFor = (platform: string) => prompts.get(platform) || firstPrompt();
 
-        const dir = path.join(process.cwd(), 'media', 'generated', String(calendar.id));
-        fs.mkdirSync(dir, { recursive: true });
+        const baseMediaDir = process.env.VERCEL ? '/tmp' : process.cwd();
+        const dir = path.join(baseMediaDir, 'media', 'generated', String(calendar.id));
+        try { fs.mkdirSync(dir, { recursive: true }); } catch {}
         const stamp = Date.now().toString(36);
         const scriptPath = path.join(process.cwd(), 'tools', 'generate_calendar.py');
 

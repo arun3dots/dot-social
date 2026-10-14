@@ -1,15 +1,18 @@
 import { Pool } from 'pg';
 import { PlanTier, Platform, UserRole } from '../types';
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error(
-    'DATABASE_URL is not set. Copy .env.example to .env and set your Postgres connection string.'
-  );
-}
+const connectionString = (process.env.DATABASE_URL || '').trim();
+
+const isRemoteDb =
+  connectionString.includes('sslmode=') ||
+  connectionString.includes('.neon.tech') ||
+  connectionString.includes('.supabase.co') ||
+  connectionString.includes('pooler.supabase.com') ||
+  (process.env.NODE_ENV === 'production' && !connectionString.includes('localhost') && !connectionString.includes('127.0.0.1'));
 
 const pool = new Pool({
-  connectionString,
+  connectionString: connectionString || undefined,
+  ssl: isRemoteDb ? { rejectUnauthorized: false } : undefined,
 });
 
 let isInitialized = false;

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import pool, { initPostgresTables } from '@/lib/postgres';
 import { currentUserId } from '@/lib/session';
 import {
@@ -97,7 +98,8 @@ export async function POST(req: NextRequest) {
 
     const spec = specFor(post.platform);
     const mode = String(body.mode || 'generate').toLowerCase() === 'reference' ? 'reference' : 'generate';
-    const dir = path.join(process.cwd(), 'media', 'generated', String(post.calendar_id));
+    const baseMediaDir = process.env.VERCEL ? '/tmp' : process.cwd();
+    const dir = path.join(baseMediaDir, 'media', 'generated', String(post.calendar_id));
 
     // The user's input image(s), resolved to files INSIDE this post's own media directory. The stored value
     // is a URL, so only its basename is used - a stored path can never reach outside the calendar's folder.
@@ -115,7 +117,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    fs.mkdirSync(dir, { recursive: true });
+    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
     const stamp = Date.now().toString(36);
     const fileName = `${post.calendar_id}_${post.day_index || 1}_${String(post.platform).toLowerCase()}_regen_${stamp}.png`;
     const outPath = path.join(dir, fileName);
@@ -177,9 +179,15 @@ export async function POST(req: NextRequest) {
     ]);
     let out = '';
     let err = '';
-    child.stdout.on('data', (d) => { out += d.toString(); });
-    child.stderr.on('data', (d) => { err += d.toString(); });
-    const code = await new Promise<number>((resolve) => { child.on('close', resolve); });
+    child.stdout?.on('data', (d) => { out += d.toString(); });
+    child.stderr?.on('data', (d) => { err += d.toString(); });
+    const code = await new Promise<number>((resolve) => {
+      child.on('error', (e) => {
+        err += ` Python error: ${e.message}`;
+        resolve(1);
+      });
+      child.on('close', (c) => resolve(c ?? 1));
+    });
 
     let parsed: any = null;
     try { parsed = JSON.parse(out.trim().split('\n').pop() || '{}'); } catch { parsed = null; }
