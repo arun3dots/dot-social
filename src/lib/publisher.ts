@@ -1,4 +1,6 @@
 import pool from '@/lib/postgres';
+import fs from 'fs';
+import path from 'path';
 import {
   createLinkedInPost,
   linkedInMemberId,
@@ -15,6 +17,32 @@ export type PublishOutcome = {
   externalId?: string;
   externalUrl?: string;
 };
+
+async function ensureMediaFileOnDisk(mediaUrl?: string | null, userId?: string) {
+  if (!mediaUrl || !mediaUrl.startsWith('/api/media/generated/') || !userId) return;
+  const rel = decodeURIComponent(mediaUrl.slice('/api/media/'.length));
+  const baseDir = process.env.VERCEL ? '/tmp' : process.cwd();
+  const root = path.join(baseDir, 'media');
+  const filePath = path.join(root, rel);
+  if (!fs.existsSync(filePath)) {
+    const parts = rel.split('/');
+    if (parts.length >= 3) {
+      const calendarId = parts[1];
+      const fileName = parts.slice(2).join('/');
+      try {
+        const { buildUserS3Key, downloadS3ObjectToBuffer } = await import('@/lib/s3');
+        const s3Key = buildUserS3Key(userId, calendarId, fileName);
+        const s3Obj = await downloadS3ObjectToBuffer(s3Key);
+        if (s3Obj && s3Obj.buffer) {
+          fs.mkdirSync(path.dirname(filePath), { recursive: true });
+          fs.writeFileSync(filePath, s3Obj.buffer);
+        }
+      } catch (err: any) {
+        console.error('[Publisher] S3 file restore error:', err.message);
+      }
+    }
+  }
+}
 
 /**
  * Publish a single post.
@@ -36,6 +64,9 @@ export async function publishPost(opts: {
   explicit?: boolean;
 }): Promise<PublishOutcome> {
   const platform = String(opts.platform || '').toUpperCase();
+  if (opts.mediaUrl) {
+    await ensureMediaFileOnDisk(opts.mediaUrl, opts.userId);
+  }
 
   const conn = await pool.query(
     `SELECT id, account_handle, connected, is_sandbox, access_token, refresh_token, token_expires_at

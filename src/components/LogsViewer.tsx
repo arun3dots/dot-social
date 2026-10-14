@@ -4,6 +4,16 @@ import React, { useState, useEffect } from 'react';
 import { Radio, RefreshCw, ExternalLink, Twitter, Linkedin, Instagram } from 'lucide-react';
 import { PublishedAuditRecord, Platform } from '@/types';
 
+function PlatformIcon({ platform }: { platform: Platform }) {
+  if (platform === 'TWITTER')   return <Twitter   size={14} style={{ color: '#0f172a' }} />;
+  if (platform === 'LINKEDIN')  return <Linkedin  size={14} style={{ color: '#0a66c2' }} />;
+  return                               <Instagram size={14} style={{ color: '#e1306c' }} />;
+}
+
+const PLATFORM_BG: Record<string, string> = {
+  TWITTER: '#e0f2fe', LINKEDIN: '#dbeafe', INSTAGRAM: '#fce7f3',
+};
+
 export default function LogsViewer() {
   const [logs, setLogs] = useState<PublishedAuditRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -21,90 +31,124 @@ export default function LogsViewer() {
     }
   };
 
-  useEffect(() => {
-    fetchLogs();
-  }, []);
-
-  const getPlatformIcon = (platform: Platform) => {
-    switch (platform) {
-      case 'TWITTER':
-        return <Twitter size={14} className="text-sky-400" />;
-      case 'LINKEDIN':
-        return <Linkedin size={14} className="text-blue-500" />;
-      case 'INSTAGRAM':
-        return <Instagram size={14} className="text-pink-500" />;
-    }
-  };
+  useEffect(() => { fetchLogs(); }, []);
 
   return (
-    <div className="bg-[#0e121a] border border-zinc-800 rounded-lg p-5 shadow-xl">
-      <div className="flex justify-between items-center mb-4">
+    <div className="card">
+      <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <h2 className="text-sm font-semibold tracking-tight text-zinc-100 flex items-center gap-2 mb-1">
-            <Radio size={16} className="text-cyan-400" />
-            Automated Publishing Dispatch Stream
-          </h2>
-          <p className="text-xs text-zinc-400">
-            Audit log of all scheduled and immediate post executions across Instagram, LinkedIn, and X.
-          </p>
+          <div className="card-title">
+            <Radio size={15} style={{ color: 'hsl(var(--accent))' }} />
+            Dispatch Stream
+          </div>
+          <div className="card-desc">
+            Audit log of all scheduled and manual post executions across Instagram, LinkedIn, and X.
+          </div>
         </div>
         <button
           onClick={fetchLogs}
           disabled={loading}
-          className="flex items-center gap-2 px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 font-mono text-xs transition-colors"
+          className="btn btn-secondary btn-sm"
         >
-          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
-          <span>Refresh Stream</span>
+          <RefreshCw size={12} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+          Refresh
         </button>
       </div>
 
-      {logs.length === 0 ? (
-        <div className="py-12 text-center text-zinc-500 font-mono text-xs">
-          No dispatches recorded yet. Generate a batch and click "Approve & Schedule" or "Dispatch Now".
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2.5">
-          {logs.map((log, idx) => (
-            <div
-              key={idx}
-              className="bg-[#07090e] border border-zinc-800/80 rounded-md p-3 flex justify-between items-center font-mono text-xs hover:border-zinc-700 transition-colors"
-            >
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {getPlatformIcon(log.platform)}
-                  <span className="font-semibold text-zinc-200">{log.platform}</span>
-                </div>
-                <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-950/40 text-emerald-400 border border-emerald-800/40 shrink-0">
-                  {log.status}
-                </span>
-                {log.isSandbox && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-zinc-900 text-zinc-400 border border-zinc-800 shrink-0">
-                    SANDBOX
-                  </span>
-                )}
-                <div className="text-zinc-400 truncate max-w-lg">
-                  {log.content || log.caption}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4 shrink-0 pl-3">
-                <span className="text-zinc-500 text-[11px]">
-                  {new Date(log.publishedAt).toLocaleTimeString()}
-                </span>
-                <a
-                  href={log.externalUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-2.5 py-1 rounded bg-zinc-800 border border-zinc-700 text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5 text-xs transition-colors"
-                >
-                  <ExternalLink size={12} />
-                  <span>Live Link</span>
-                </a>
-              </div>
+      <div className="card-body">
+        {logs.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 32px' }}>
+            <div style={{
+              width: 48, height: 48, borderRadius: 12,
+              background: 'hsl(var(--bg-surface-2))',
+              border: '1px solid hsl(var(--border))',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 14px', fontSize: 22,
+            }}>
+              📡
             </div>
-          ))}
-        </div>
-      )}
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'hsl(var(--text-primary))', marginBottom: 4 }}>
+              No dispatches yet
+            </p>
+            <p style={{ fontSize: 12, color: 'hsl(var(--text-secondary))' }}>
+              Generate a batch, approve it, and click &ldquo;Dispatch Now&rdquo; or schedule posts to see the stream.
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {logs.map((log, idx) => (
+              <div
+                key={idx}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '12px 16px',
+                  border: '1px solid hsl(var(--border))',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'hsl(var(--bg-surface))',
+                  transition: 'border-color 0.12s, box-shadow 0.12s',
+                  gap: 12,
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.borderColor = 'hsl(var(--border-strong))';
+                  (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-sm)';
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.borderColor = 'hsl(var(--border))';
+                  (e.currentTarget as HTMLElement).style.boxShadow = 'none';
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+                  {/* Platform chip */}
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    padding: '3px 8px', borderRadius: 6,
+                    background: PLATFORM_BG[log.platform] ?? '#f1f5f9',
+                    fontSize: 11, fontWeight: 600, flexShrink: 0,
+                    color: 'hsl(var(--text-primary))',
+                  }}>
+                    <PlatformIcon platform={log.platform} />
+                    {log.platform}
+                  </span>
+
+                  {/* Status */}
+                  <span className="badge badge-published" style={{ flexShrink: 0 }}>
+                    {log.status}
+                  </span>
+
+                  {/* Sandbox tag */}
+                  {log.isSandbox && (
+                    <span className="badge badge-sandbox" style={{ flexShrink: 0 }}>Sandbox</span>
+                  )}
+
+                  {/* Content preview */}
+                  <span style={{
+                    fontSize: 12, color: 'hsl(var(--text-secondary))',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {log.content || log.caption}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, color: 'hsl(var(--text-tertiary))' }}>
+                    {new Date(log.publishedAt).toLocaleTimeString()}
+                  </span>
+                  <a
+                    href={log.externalUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn btn-secondary btn-sm"
+                    style={{ textDecoration: 'none', color: 'hsl(var(--accent))' }}
+                  >
+                    <ExternalLink size={12} />
+                    View
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

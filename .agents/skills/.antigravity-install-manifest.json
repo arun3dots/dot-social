@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-01T03:59:01.717Z",
+  "updatedAt": "2026-10-09T07:12:21.964Z",
   "entries": [
     "auth-implementation-patterns",
     "bullmq-specialist",
@@ -12,8 +12,11 @@
     "llm-structured-output",
     "nextjs-app-router-patterns",
     "prisma-expert",
+    "python-content-tools",
+    "raw-postgres-pg",
     "react-best-practices",
     "security-and-hardening",
+    "social-publishing-apis",
     "systematic-debugging",
     "testing-patterns"
   ]

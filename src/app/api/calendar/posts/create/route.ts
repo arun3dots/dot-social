@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import pool, { initPostgresTables } from '@/lib/postgres';
 import { currentUserId } from '@/lib/session';
 import {
@@ -14,6 +15,7 @@ import {
 } from '@/lib/ai';
 import { specFor } from '@/lib/platformSpecs';
 import { localWallTimeToUtc, timezoneLabel, userTimezone } from '@/lib/schedule';
+import { uploadLocalFileToS3 } from '@/lib/s3';
 
 /**
  * Add post(s) to a particular day of a calendar - one per selected platform - optionally with an image.
@@ -37,16 +39,23 @@ const PLATFORMS = ['TWITTER', 'LINKEDIN', 'INSTAGRAM'];
 
 function runGenerator(args: string[]): Promise<{ code: number; out: string; err: string }> {
   return new Promise((resolve) => {
-    const child = spawn('python', args);
-    let out = '';
-    let err = '';
-    child.stdout.on('data', (d) => {
-      out += d.toString();
-    });
-    child.stderr.on('data', (d) => {
-      err += d.toString();
-    });
-    child.on('close', (code) => resolve({ code: code ?? 1, out, err }));
+    try {
+      const child = spawn('python', args);
+      let out = '';
+      let err = '';
+      child.stdout?.on('data', (d) => {
+        out += d.toString();
+      });
+      child.stderr?.on('data', (d) => {
+        err += d.toString();
+      });
+      child.on('error', (e) => {
+        resolve({ code: 1, out: '', err: `Python spawn error: ${e.message}` });
+      });
+      child.on('close', (code) => resolve({ code: code ?? 1, out, err }));
+    } catch (e: any) {
+      resolve({ code: 1, out: '', err: `Spawn error: ${e.message}` });
+    }
   });
 }
 
@@ -197,6 +206,7 @@ export async function POST(req: NextRequest) {
 
     let imageReport: any = null;
     const mediaByPlatform = new Map<string, string>();
+    const s3ByPlatform = new Map<string, { key: string; url: string }>();
 
     if (wantsImage) {
       const imageApiKey = String(body.imageApiKey || '').trim() || (process.env.OPENAI_API_KEY || '').trim();
@@ -282,8 +292,9 @@ export async function POST(req: NextRequest) {
         const firstPrompt = () => Array.from(prompts.values())[0] || '';
         const promptFor = (platform: string) => prompts.get(platform) || firstPrompt();
 
-        const dir = path.join(process.cwd(), 'media', 'generated', String(calendar.id));
-        fs.mkdirSync(dir, { recursive: true });
+        const baseMediaDir = process.env.VERCEL ? '/tmp' : process.cwd();
+        const dir = path.join(baseMediaDir, 'media', 'generated', String(calendar.id));
+        try { fs.mkdirSync(dir, { recursive: true }); } catch {}
         const stamp = Date.now().toString(36);
         const scriptPath = path.join(process.cwd(), 'tools', 'generate_calendar.py');
 
@@ -386,6 +397,27 @@ export async function POST(req: NextRequest) {
             };
             if (url) mediaByPlatform.set(platform, url);
           }
+
+          // Upload generated images to S3 grouped by userId
+          for (const platform of platforms) {
+            const info = outputs[platform];
+            if (info?.path && fs.existsSync(info.path)) {
+              try {
+                const s3Res = await uploadLocalFileToS3({
+                  filePath: info.path,
+                  userId,
+                  calendarId: String(calendar.id),
+                  customFileName: path.basename(info.path),
+                });
+                if (s3Res) {
+                  s3ByPlatform.set(platform, { key: s3Res.key, url: s3Res.url });
+                }
+              } catch (e: any) {
+                console.error('[S3] Failed to upload to S3 in posts create:', e.message);
+              }
+            }
+          }
+
           imageReport = {
             ok: true,
             perPlatform: perPlatformImages,
@@ -429,12 +461,13 @@ export async function POST(req: NextRequest) {
 
       // Prefer the prompt written for THIS platform, so a later regeneration stays platform-specific.
       const storedPrompt = draft.imagePrompt || (wantsImage ? String(imageReport?.promptsByPlatform?.[platform] || imageReport?.prompt || '') || null : null);
-      const mediaUrl = mediaByPlatform.get(platform) || null;
+      const mediaUrl = (typeof body.mediaUrl === 'string' && body.mediaUrl.trim()) ? body.mediaUrl.trim() : (mediaByPlatform.get(platform) || null);
+      const s3Info = s3ByPlatform.get(platform) || null;
 
       await pool.query(
-        `INSERT INTO posts (id, calendar_id, user_id, day_index, platform, content, media_prompt, media_url, scheduled_time, status, tagged_users)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'PENDING_APPROVAL', '[]'::jsonb)`,
-        [id, calendar.id, userId, dayIndex, platform, draft.content || null, storedPrompt, mediaUrl, scheduledTime]
+        `INSERT INTO posts (id, calendar_id, user_id, day_index, platform, content, media_prompt, media_url, scheduled_time, status, tagged_users, s3_key, s3_url)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'PENDING_APPROVAL', '[]'::jsonb, $10, $11)`,
+        [id, calendar.id, userId, dayIndex, platform, draft.content || null, storedPrompt, mediaUrl, scheduledTime, s3Info?.key || null, s3Info?.url || null]
       );
 
       const imageFile = imageReport?.ok ? imageReport.files?.[platform] : null;
@@ -444,6 +477,8 @@ export async function POST(req: NextRequest) {
         content: draft.content,
         mediaPrompt: storedPrompt,
         mediaUrl,
+        s3Key: s3Info?.key || null,
+        s3Url: s3Info?.url || null,
         scheduledTime,
         status: 'PENDING_APPROVAL',
         taggedUsers: [],

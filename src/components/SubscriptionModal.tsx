@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { PlanTier, SubscriptionInfo } from '@/types';
 import { PLAN_TIERS } from '@/lib/subscriptions';
-import { Check, Zap, X, Shield, ArrowRight } from 'lucide-react';
+import { Check, Zap, X, ArrowRight } from 'lucide-react';
 
 interface Props {
   isOpen: boolean;
@@ -25,14 +25,12 @@ export default function SubscriptionModal({
   const handleSelectTier = async (tier: PlanTier) => {
     if (tier === currentSubscription.tier) return;
     setLoadingTier(tier);
-
     try {
       const res = await fetch('/api/subscriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tier }),
       });
-
       const data = await res.json();
       if (res.ok && data.subscription) {
         onPlanUpdated(data.subscription);
@@ -46,29 +44,61 @@ export default function SubscriptionModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-[#0f1219] border border-zinc-800 rounded-xl max-w-4xl w-full p-6 shadow-2xl relative">
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 50,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 24,
+      background: 'rgba(0,0,0,.5)',
+      backdropFilter: 'blur(6px)',
+      animation: 'toast-in 0.15s ease',
+    }}>
+      <div style={{
+        background: 'hsl(var(--bg-surface))',
+        border: '1px solid hsl(var(--border))',
+        borderRadius: 'var(--radius-lg)',
+        maxWidth: 860, width: '100%',
+        padding: '32px 28px 28px',
+        boxShadow: 'var(--shadow-lg)',
+        position: 'relative',
+      }}>
+        {/* Close */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-100 p-1 rounded-md transition-colors"
+          style={{
+            position: 'absolute', top: 16, right: 16,
+            width: 30, height: 30, borderRadius: 8,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'hsl(var(--bg-surface-2))',
+            border: '1px solid hsl(var(--border))',
+            cursor: 'pointer', color: 'hsl(var(--text-secondary))',
+          }}
         >
-          <X size={18} />
+          <X size={14} />
         </button>
 
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-950/40 border border-cyan-800/40 text-cyan-400 text-xs font-mono mb-3">
-            <Zap size={13} />
-            <span>SUBSCRIPTION_TIERS</span>
-          </div>
-          <h2 className="text-2xl font-bold tracking-tight text-white mb-2">
-            Select Your Publishing Plan
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '4px 12px', borderRadius: 20,
+            background: 'hsl(221 83% 53% / .1)',
+            color: 'hsl(221 83% 45%)',
+            border: '1px solid hsl(221 83% 53% / .2)',
+            fontSize: 11, fontWeight: 600, marginBottom: 14,
+          }}>
+            <Zap size={12} />
+            Publishing Plans
+          </span>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: 'hsl(var(--text-primary))', letterSpacing: '-0.03em', marginBottom: 6 }}>
+            Choose your plan
           </h2>
-          <p className="text-xs text-zinc-400 max-w-md mx-auto">
-            Scale your multi-platform social presence across Instagram, LinkedIn, and X with automated AI scheduling.
+          <p style={{ fontSize: 13, color: 'hsl(var(--text-secondary))' }}>
+            Scale your multi-platform presence with AI-powered automated scheduling.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Plan cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
           {(Object.keys(PLAN_TIERS) as PlanTier[]).map((tierKey) => {
             const plan = PLAN_TIERS[tierKey];
             const isCurrent = currentSubscription.tier === tierKey;
@@ -77,40 +107,56 @@ export default function SubscriptionModal({
             return (
               <div
                 key={tierKey}
-                className={`relative flex flex-col justify-between rounded-lg p-5 border transition-all ${
-                  isPro
-                    ? 'border-cyan-500/60 bg-[#121722] shadow-lg shadow-cyan-950/20'
-                    : 'border-zinc-800 bg-[#0a0c10]'
-                }`}
+                style={{
+                  position: 'relative',
+                  display: 'flex', flexDirection: 'column',
+                  borderRadius: 'var(--radius)',
+                  padding: '20px 18px',
+                  border: isPro ? '2px solid hsl(221 83% 53%)' : '1px solid hsl(var(--border))',
+                  background: isPro ? 'hsl(221 83% 53% / .04)' : 'hsl(var(--bg-surface))',
+                  boxShadow: isPro ? 'var(--shadow-md)' : 'none',
+                }}
               >
                 {isPro && (
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-cyan-500 text-black font-mono text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                  <span style={{
+                    position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)',
+                    background: 'hsl(221 83% 53%)', color: 'white',
+                    fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
+                    textTransform: 'uppercase', letterSpacing: '0.05em',
+                    whiteSpace: 'nowrap',
+                  }}>
                     {plan.badge}
                   </span>
                 )}
 
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <h3 className="font-semibold text-sm text-zinc-200">{plan.name}</h3>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, color: 'hsl(var(--text-primary))' }}>
+                      {plan.name}
+                    </h3>
                     {isCurrent && (
-                      <span className="badge badge-emerald text-[10px] font-mono">
-                        CURRENT_PLAN
-                      </span>
+                      <span className="badge badge-approved">Current</span>
                     )}
                   </div>
 
-                  <div className="flex items-baseline gap-1 mb-4">
-                    <span className="text-2xl font-bold text-white font-mono">{plan.price}</span>
-                    <span className="text-xs text-zinc-500">{plan.billingPeriod}</span>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 10 }}>
+                    <span style={{ fontSize: 26, fontWeight: 800, color: 'hsl(var(--text-primary))', letterSpacing: '-0.04em' }}>
+                      {plan.price}
+                    </span>
+                    <span style={{ fontSize: 12, color: 'hsl(var(--text-tertiary))' }}>
+                      {plan.billingPeriod}
+                    </span>
                   </div>
 
-                  <p className="text-xs text-zinc-400 mb-4 min-h-[32px]">{plan.description}</p>
+                  <p style={{ fontSize: 12, color: 'hsl(var(--text-secondary))', marginBottom: 14, lineHeight: 1.5, minHeight: 36 }}>
+                    {plan.description}
+                  </p>
 
-                  <div className="space-y-2 border-t border-zinc-800/80 pt-4 mb-6">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid hsl(var(--border))', paddingTop: 14, marginBottom: 18 }}>
                     {plan.features.map((f, idx) => (
-                      <div key={idx} className="flex items-center gap-2 text-xs text-zinc-300">
-                        <Check size={12} className="text-cyan-400 shrink-0" />
-                        <span>{f}</span>
+                      <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, color: 'hsl(var(--text-secondary))' }}>
+                        <Check size={13} style={{ color: 'hsl(221 83% 53%)', flexShrink: 0, marginTop: 1 }} />
+                        {f}
                       </div>
                     ))}
                   </div>
@@ -119,23 +165,11 @@ export default function SubscriptionModal({
                 <button
                   onClick={() => handleSelectTier(tierKey)}
                   disabled={isCurrent || loadingTier !== null}
-                  className={`w-full py-2 px-3 rounded font-mono text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                    isCurrent
-                      ? 'bg-zinc-800 text-zinc-500 cursor-default'
-                      : isPro
-                      ? 'bg-cyan-500 hover:bg-cyan-400 text-black'
-                      : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
-                  }`}
+                  className={`btn ${isCurrent ? 'btn-secondary' : isPro ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ width: '100%', justifyContent: 'center' }}
                 >
-                  {isCurrent ? (
-                    'Active Plan'
-                  ) : loadingTier === tierKey ? (
-                    'Upgrading...'
-                  ) : (
-                    <>
-                      <span>Select {plan.name}</span>
-                      <ArrowRight size={12} />
-                    </>
+                  {isCurrent ? 'Active Plan' : loadingTier === tierKey ? 'Upgrading…' : (
+                    <>{`Select ${plan.name}`} <ArrowRight size={12} /></>
                   )}
                 </button>
               </div>

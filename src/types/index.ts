@@ -20,6 +20,7 @@ export interface UserSession {
   role: UserRole;
   avatar: string;
   subscription?: SubscriptionInfo;
+  screenName?: string;
 }
 
 export type Platform = 'TWITTER' | 'LINKEDIN' | 'INSTAGRAM';
@@ -62,6 +63,9 @@ export interface PostItem {
   /** Result of a manual "Dispatch Now" - kept apart from the scheduled publish. */
   manualExternalUrl?: string;
   manualPublishedAt?: string;
+  /** S3 Cloud Storage metadata */
+  s3Key?: string | null;
+  s3Url?: string | null;
 }
 
 export interface CalendarDay {

@@ -3,7 +3,7 @@ import './globals.css';
 import AuthProvider from '@/components/providers/AuthProvider';
 
 export const metadata: Metadata = {
-  title: 'Social Engine // Autonomous Multi-Platform Dispatcher',
+  title: 'dot.social — AI Social Media Studio',
   description: 'AI-driven social media calendar, human-in-the-loop approval, and multi-platform publishing engine for Instagram, LinkedIn, and X.',
 };
 

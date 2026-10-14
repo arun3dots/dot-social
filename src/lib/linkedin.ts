@@ -56,7 +56,8 @@ export function resolveMediaFile(mediaUrl: string): LinkedInResult<{ filePath: s
     return { ok: false, reason: `media path is not a served media URL: ${mediaUrl}` };
   }
   const rel = decodeURIComponent(mediaUrl.slice(prefix.length));
-  const root = path.join(process.cwd(), 'media');
+  const baseDir = process.env.VERCEL ? '/tmp' : process.cwd();
+  const root = path.join(baseDir, 'media');
   const filePath = path.join(root, rel);
   if (!filePath.startsWith(root + path.sep)) {
     return { ok: false, reason: 'media path escapes the media directory' };

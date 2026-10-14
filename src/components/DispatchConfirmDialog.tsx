@@ -60,68 +60,70 @@ export default function DispatchConfirmDialog({
   const mentions = post.taggedUsers?.length || 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-md bg-[#0e121a] border border-zinc-700 rounded-lg shadow-2xl">
-        <div className="px-5 py-3 border-b border-zinc-800">
-          <div className="text-sm font-semibold text-zinc-100 font-mono">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+      <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+          <div className="text-sm font-bold text-slate-900 font-mono">
             Post this to {post.platform} now?
           </div>
         </div>
-        <div className="p-5 flex flex-col gap-3 text-[11px] font-mono text-zinc-300">
+        <div className="p-5 flex flex-col gap-3.5 text-xs text-slate-700">
           <div>
-            Scheduled for <span className="text-zinc-100">{fmt(post.scheduledTime)}</span>
+            Scheduled for <span className="text-slate-900 font-bold">{fmt(post.scheduledTime)}</span>
           </div>
-          <div>
+          <div className="text-slate-600">
             {post.mediaUrl ? 'With its image attached.' : 'Text only — no image on this post.'}
             {mentions > 0 ? ` ${mentions} tagged mention(s).` : ''}
           </div>
 
-          <label className="flex items-start gap-2 mt-1 cursor-pointer">
+          <label className="flex items-start gap-2.5 mt-1 cursor-pointer bg-slate-50 p-2.5 rounded-xl border border-slate-200">
             <input
               type="checkbox"
               checked={keepScheduled}
               onChange={(e) => setKeepScheduled(e.target.checked)}
-              className="mt-0.5"
+              className="mt-0.5 rounded text-sky-600 focus:ring-sky-500"
             />
-            <span className="leading-relaxed">
+            <span className="leading-relaxed text-slate-700 text-xs">
               {keepScheduled ? (
                 <>
-                  keep it scheduled — it will post <span className="text-amber-400">again</span> at{' '}
+                  Keep it scheduled — it will post <span className="text-amber-600 font-bold">again</span> at{' '}
                   {fmt(post.scheduledTime)}
                   <br />
-                  <span className="text-zinc-500">uncheck to post once now and take it out of the schedule</span>
+                  <span className="text-slate-400 text-[11px]">Uncheck to post once now and take it out of the schedule</span>
                 </>
               ) : (
                 <>
-                  post <span className="text-zinc-100">once</span> now and take it out of the schedule (nothing will
+                  Post <span className="text-slate-900 font-bold">once</span> now and take it out of the schedule (nothing will
                   be posted at {fmt(post.scheduledTime)})
                   <br />
-                  <span className="text-zinc-500">tick to keep it queued as well</span>
+                  <span className="text-slate-400 text-[11px]">Tick to keep it queued as well</span>
                 </>
               )}
             </span>
           </label>
 
           <div
-            className={`leading-relaxed border-t border-zinc-800 pt-3 ${
-              reality.willPost ? 'text-zinc-500' : 'text-amber-400'
+            className={`leading-relaxed border-t border-slate-100 pt-3 text-xs ${
+              reality.willPost ? 'text-slate-500' : 'text-amber-600 font-medium'
             }`}
           >
             {reality.text}
           </div>
 
-          <div className="flex justify-end gap-2 pt-1">
+          <div className="flex justify-end gap-2 pt-2">
             <button
-              onClick={() => onConfirm(post, { keepScheduled })}
-              className="px-4 py-2 rounded bg-cyan-600 hover:bg-cyan-500 text-black text-xs font-mono font-semibold"
-            >
-              Post now
-            </button>
-            <button
+              type="button"
               onClick={onCancel}
-              className="px-4 py-2 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-mono"
+              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
             >
               Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => onConfirm(post, { keepScheduled })}
+              className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold transition-colors shadow-xs"
+            >
+              Post now
             </button>
           </div>
         </div>
