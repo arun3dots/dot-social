@@ -21,7 +21,8 @@ export type PublishOutcome = {
 async function ensureMediaFileOnDisk(mediaUrl?: string | null, userId?: string) {
   if (!mediaUrl || !mediaUrl.startsWith('/api/media/generated/') || !userId) return;
   const rel = decodeURIComponent(mediaUrl.slice('/api/media/'.length));
-  const root = path.join(process.cwd(), 'media');
+  const baseDir = process.env.VERCEL ? '/tmp' : process.cwd();
+  const root = path.join(baseDir, 'media');
   const filePath = path.join(root, rel);
   if (!fs.existsSync(filePath)) {
     const parts = rel.split('/');
